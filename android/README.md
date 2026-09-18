@@ -215,7 +215,29 @@ Release 构建已开启，无需额外参数：
 - `packaging.resources.excludes`：剔除 `META-INF/*`、`kotlin/**`、`DebugProbesKt.bin` 等构建元数据
 - `dependenciesInfo includeInApk false`：不写入依赖信息
 
-当前 Release 通用包约 **910 KB**（优化前 3.6 MB）。
+当前 Release 通用包约 **782 KB**（优化前 3.6 MB）。
+
+### ⚠️ 开了 R8 就必须实跑 release 包
+
+**debug 包通过 ≠ release 包通过。** R8 会做类合并、属性剥离、名字改写，能造出只在 release 出现的崩溃。
+
+最容易踩的一个：**永远不要写 `new TypeToken<X>() {}` 匿名子类**去做 Gson 反序列化。
+R8 会把多个匿名 TypeToken 子类合并成一个，合并后 `Signature` 属性无处承载被丢弃
+（实测 release dex 里 `Ldalvik/annotation/Signature;` 数量为 0，**写了 `-keepattributes Signature` 也无效**），
+Gson 随即抛 `Missing type parameter.`，表现为「Android Studio run 正常、打包后一启动就闪退」。
+
+本工程已统一改用 `util/JsonTypes`（内部是 `TypeToken.getParameterized()`，不依赖签名）。
+新增泛型反序列化请往那里加常量，详见 `app/proguard-rules.pro` 的 Gson 段落注释。
+
+改动混淆规则或依赖后，建议真机过一遍：
+
+```bash
+./build_release.sh                       # 自动编译 + 安装 + 启动
+# 或手动：
+adb install -r app/build/outputs/apk/release/*.apk
+adb shell am start -n com.xu42.tv.live/.LiveActivity
+adb logcat -d | grep -A 20 "FATAL EXCEPTION"
+```
 
 ## 注意事项
 

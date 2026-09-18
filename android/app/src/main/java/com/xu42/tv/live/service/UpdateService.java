@@ -2,8 +2,6 @@ package com.xu42.tv.live.service;
 
 import android.content.Context;
 
-import com.google.gson.reflect.TypeToken;
-
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -21,6 +19,7 @@ import com.xu42.tv.live.domain.live.Live;
 import com.xu42.tv.live.domain.live.Vod;
 import com.xu42.tv.live.util.AppConfig;
 import com.xu42.tv.live.util.FileUtil;
+import com.xu42.tv.live.util.JsonTypes;
 import com.xu42.tv.live.util.JsonUtil;
 import com.xu42.tv.live.util.LogUtil;
 
@@ -175,8 +174,7 @@ public class UpdateService {
         if (json.trim().isEmpty()) {
             return;
         }
-        DataWrapper<List<Live>> data = JsonUtil.fromJson(json, new TypeToken<DataWrapper<List<Live>>>() {
-        }.getType());
+        DataWrapper<List<Live>> data = JsonUtil.fromJson(json, JsonTypes.LIVE_DATA);
         List<Live> lives = data.getData();
         if (null == lives) {
             return;

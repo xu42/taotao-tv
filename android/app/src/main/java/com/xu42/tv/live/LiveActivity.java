@@ -31,8 +31,6 @@ import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.databinding.DataBindingUtil;
 
-import com.google.gson.reflect.TypeToken;
-
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
@@ -53,6 +51,7 @@ import com.xu42.tv.live.service.FavoriteService;
 import com.xu42.tv.live.service.UpdateService;
 import com.xu42.tv.live.util.FileUtil;
 import com.xu42.tv.live.util.HttpUtil;
+import com.xu42.tv.live.util.JsonTypes;
 import com.xu42.tv.live.util.JsonUtil;
 import com.xu42.tv.live.util.LogUtil;
 import com.xu42.tv.live.util.Util;
@@ -1099,8 +1098,7 @@ public class LiveActivity extends BaseActivity {
         List<HzItem> hzItems = new ArrayList<>();
         if (null != videoQualityData) {
             try {
-                hzItems = JsonUtil.fromJson(videoQualityData, new TypeToken<List<HzItem>>() {
-                }.getType());
+                hzItems = JsonUtil.fromJson(videoQualityData, JsonTypes.HZ_LIST);
             } catch (Exception ignore) {
             }
         }
@@ -1319,9 +1317,7 @@ public class LiveActivity extends BaseActivity {
 
         @JavascriptInterface
         public String postJson(String url, String header, String requestBody) {
-            Map<String, String> headerMap = JsonUtil.fromJson(header,
-                    new TypeToken<Map<String, String>>() {
-                    }.getType());
+            Map<String, String> headerMap = JsonUtil.fromJson(header, JsonTypes.STRING_MAP);
             if (!url.startsWith("http")) {
                 return FileUtil.readExt(MyApplication.getAppContext(), "tv-web/" + url);
             }
@@ -1330,9 +1326,7 @@ public class LiveActivity extends BaseActivity {
 
         @JavascriptInterface
         public String getJson(String url, String header) {
-            Map<String, String> headerMap = JsonUtil.fromJson(header,
-                    new TypeToken<Map<String, String>>() {
-                    }.getType());
+            Map<String, String> headerMap = JsonUtil.fromJson(header, JsonTypes.STRING_MAP);
             if (!url.startsWith("http")) {
                 return FileUtil.readExt(MyApplication.getAppContext(), "tv-web/" + url);
             }
@@ -1341,9 +1335,7 @@ public class LiveActivity extends BaseActivity {
 
         @JavascriptInterface
         public String getHtml(String url, String header) {
-            Map<String, String> headerMap = JsonUtil.fromJson(header,
-                    new TypeToken<Map<String, String>>() {
-                    }.getType());
+            Map<String, String> headerMap = JsonUtil.fromJson(header, JsonTypes.STRING_MAP);
             return HttpUtil.getJson(url, headerMap);
         }
     }
