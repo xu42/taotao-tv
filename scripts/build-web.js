@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 油桃TV 前端资源打包脚本
+ * 桃桃TV 前端资源打包脚本
  *
  * 作用：
  *   1) 执行 web/tv-web/node.js，把 yml 源数据转换成 json（tv.json / update.json / data/*.json）

@@ -1,6 +1,6 @@
 {
     "manifest_version": 2,
-    "name": "油桃投屏TV端",
+    "name": "桃桃投屏TV端",
     "version": "1.0.5",
     "description": "utao tv",
     "content_security_policy": "script-src 'self' 'unsafe-eval'; object-src 'self'",
