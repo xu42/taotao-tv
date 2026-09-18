@@ -4,7 +4,6 @@ import android.animation.ObjectAnimator;
 import android.animation.PropertyValuesHolder;
 import android.animation.ValueAnimator;
 import android.content.Context;
-import android.content.Intent;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Handler;
@@ -40,7 +39,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-import com.xu42.tv.live.call.StringCallback;
 import com.xu42.tv.live.dao.HistoryDaoX;
 import com.xu42.tv.live.databinding.ActivityLiveBinding;
 import com.xu42.tv.live.databinding.DialogExitBinding;
@@ -134,8 +132,6 @@ public class LiveActivity extends BaseActivity {
     @Override
     protected void createInit() {
         bind();
-        UpdateService.baseFolder = this.getFilesDir().getPath();
-        UpdateService.updateRes(this);
         UpdateService.initTvData();
         favoriteService = FavoriteService.getInstance(this);
 
@@ -230,7 +226,7 @@ public class LiveActivity extends BaseActivity {
     // ------------------------------------------------------------------ 播放
 
     protected void initWebViewClient() {
-        WebViewClientImpl client = new WebViewClientImpl(getBaseContext(), mWebView, 1);
+        WebViewClientImpl client = new WebViewClientImpl(getBaseContext(), mWebView);
         client.setLoadStateListener(new WebViewClientImpl.LoadStateListener() {
             @Override
             public void onMainFrameError(String url, String reason) {
@@ -1042,20 +1038,11 @@ public class LiveActivity extends BaseActivity {
             exitDialogBinding.btnFavorite.post(() -> exitDialogBinding.btnFavorite.requestFocus());
         });
         exitDialogBinding.btnCancel.setOnClickListener(v -> hideExitDialog());
-        exitDialogBinding.btnBackHome.setOnClickListener(v -> {
-            hideExitDialog();
-            toHome();
-        });
         exitDialogBinding.btnExitApp.setOnClickListener(v -> {
             finishAffinity();
             System.exit(0);
         });
         exitDialogBinding.dialogBackdrop.setOnClickListener(v -> hideExitDialog());
-    }
-
-    private void toHome() {
-        startActivity(new Intent(this, HomeActivity.class));
-        finish();
     }
 
     // ------------------------------------------------------------------ 数字键
@@ -1309,23 +1296,6 @@ public class LiveActivity extends BaseActivity {
         @JavascriptInterface
         public void message(String service, String data) {
             LogUtil.i(TAG, "service " + service + " data " + data);
-            if ("history.save".equals(service)) {
-                HistoryDaoX.save(thisContext, data, new StringCallback() {
-                    @Override
-                    public void data(String data) {
-                        runOnUiThread(() -> {
-                            if (null != mWebView) {
-                                mWebView.loadUrl(data);
-                            }
-                        });
-                    }
-                });
-                return;
-            }
-            if ("history.update".equals(service)) {
-                HistoryDaoX.update(thisContext, data);
-                return;
-            }
             if ("menuShow".equals(service)) {
                 isMenuShow = "1".equals(data);
                 return;

@@ -1,37 +1,31 @@
 # 桃桃TV Android项目
 
 ## 项目简介
-这是一个 Android TV 应用项目，使用 Java 开发，采用 DataBinding 架构。主要提供「直播」与「影视」两个入口。
+这是一个 Android TV 应用项目，使用 Java 开发，采用 DataBinding 架构。**只有「直播」一个模块**，应用启动即进入直播页。
 
 ## 技术栈
 - **语言**: Java
 - **架构**: DataBinding
 - **WebView**: 系统内核（`android.webkit`），不打包任何第三方浏览器内核
 - **平台**: Android TV
+- **运行模式**: **完全本地化**，不依赖任何自建服务端（无配置拉取 / 无热更新 / 无崩溃上报 / 无自升级）
 
 ## 项目结构
 
 ```
 app/src/main/
 ├── java/com/xu42/tv/live/
-│   ├── StartActivity.java          # 启动页（检查配置/更新）
-│   ├── HomeActivity.java           # 首页（直播 / 影视 两个入口）
-│   ├── MainActivity.java           # 影视页面（Web 聚合点播）
-│   ├── LiveActivity.java           # 直播页面
+│   ├── LiveActivity.java           # 直播页面（唯一 Activity，也是启动入口）
 │   ├── BaseActivity.java           # Activity基类
-│   ├── BaseWebViewActivity.java    # WebView Activity基类
-│   ├── api/                        # API接口
-│   ├── dao/                        # 数据库操作
+│   ├── MyApplication.java          # Application
+│   ├── dao/                        # 数据库操作（收藏 / 历史）
 │   ├── domain/                     # 数据模型
-│   ├── impl/                       # 接口实现
-│   ├── service/                    # 服务层
+│   ├── impl/                       # WebViewClient 等实现
+│   ├── service/                    # 服务层（频道数据 / 崩溃日志）
 │   ├── util/                       # 工具类（AppConfig 为地址唯一出处）
 │   └── utils/                      # 工具类
 ├── res/
 │   ├── layout/                     # 布局文件
-│   │   ├── activity_start.xml      # 启动页布局
-│   │   ├── activity_home.xml       # 首页布局
-│   │   ├── activity_main.xml       # 影视页面布局
 │   │   ├── activity_live.xml       # 直播页面布局（含二级分类菜单容器）
 │   │   ├── item_live_category.xml  # 直播分类行（左侧列表）
 │   │   ├── item_live_channel.xml   # 直播频道行（右侧列表）
@@ -39,28 +33,20 @@ app/src/main/
 │   ├── values/                     # 资源值
 │   └── drawable/                   # 图片资源
 └── assets/                         # 静态资源（由 scripts/build-web.js 生成，不入库）
-    └── tv-web/                     # Web页面资源
+    └── tv-web/                     # Web页面资源（直播页面）
 ```
 
 ## 核心页面说明
 
-### 1. StartActivity（启动页）
-- 应用入口，负责初始化
-- 请求 `/app/config`，处理应用升级提示与网页资源热更新
-- 完成后进入首页（直播 / 影视）
-
-### 2. HomeActivity（首页）
-- 只有「直播」「影视」两个入口，遥控器左右切换
-- 未选中为浅色卡片、选中为深色卡片 + 描边，带轻微缩放动效
-- 返回键弹出退出对话框
-
-### 3. MainActivity（影视页面）
-- 基于 WebView 加载视频聚合页面
-- 支持遥控器按键控制
-- 支持菜单操作（选集、画质、倍速等）
+### LiveActivity（直播页面 · 唯一页面）
+- **启动即播**：读取观看历史，有记录就续播上次的频道与源；没有记录就默认播 CCTV-1
+- 电视直播功能，**二级分类菜单**：左侧是分类（央视 / 卫视 / 各省地方台…），右侧是该分类下的频道
+- 每个频道可以有 **1 个或多个源**，列表里不再暴露源（只显示「N 源」角标），默认播放央视网
+- **自动容灾**：默认源播放失败（主帧加载报错 / HTTP ≥400 / 超时 / 页面里探测不到播放器）时，自动切到该频道的下一个源，并 toast 提示「播放失败，自动切到…」
+- **手动换源**：播放中按左右键即可在同一频道的多个源之间循环切换
+- 上/下键在当前分类内快速切台；按 MENU / SETTINGS / OK 呼出二级分类菜单
+- 切台期间显示「加载中」跳动圆点遮罩，避免露出未渲染完的网页
 - 支持返回退出对话框
-
-### 4. LiveActivity（直播页面）
 - 电视直播功能，**二级分类菜单**：左侧是分类（央视 / 卫视 / 各省地方台…），右侧是该分类下的频道
 - 每个频道可以有 **1 个或多个源**，列表里不再暴露源（只显示「N 源」角标），默认播放央视网
 - **自动容灾**：默认源播放失败（主帧加载报错 / HTTP ≥400 / 超时 / 页面里探测不到播放器）时，自动切到该频道的下一个源，并 toast 提示「播放失败，自动切到…」
@@ -83,7 +69,7 @@ protected ActivityMainBinding binding;
 
 @Override
 protected void createInit() {
-    binding = DataBindingUtil.setContentView(this, R.layout.activity_main);
+    binding = DataBindingUtil.setContentView(this, R.layout.activity_live);
     binding.setMenuTitleHandler(new MenuTitleHandler());
 }
 ```
@@ -128,17 +114,7 @@ public boolean dispatchKeyEvent(KeyEvent event) {
 ```
 
 ### 4. 页面跳转规范
-```java
-// 跳转到MainActivity
-Intent intent = new Intent(this, MainActivity.class);
-startActivity(intent);
-finish();
-
-// 跳转到LiveActivity
-Intent intent = new Intent(this, LiveActivity.class);
-startActivity(intent);
-finish();
-```
+本应用只有一个 Activity（`LiveActivity`），页面内的所有页面切换都在 WebView 内部完成，不再有 Activity 之间的跳转。
 
 ### 5. SharedPreferences使用规范
 使用`ValueUtil`工具类进行数据存储：
@@ -169,23 +145,13 @@ ToastUtils.show(context, "提示信息", Toast.LENGTH_SHORT);
 - 按返回键弹出退出对话框（右侧1/3屏幕）
 - 默认选中"退出"选项
 - 再次按返回键或点击确认退出
-- 支持"启动首页"切换功能
 
-### 2. 首页入口
-- 首页固定「直播 / 影视」两个入口，遥控器左右切换
-- 焦点卡片选中态为深色 + 描边，未选中为浅色
-- 选中记忆最近一次使用的入口
-
-### 3. 直播功能
+### 2. 直播功能
+- 启动即播：优先续播上次频道，无记录则播 CCTV-1
 - 二级分类菜单：左分类 / 右频道，遥控器上下切分类、左右进频道
 - 一个频道多个源，默认央视网，失败自动切换，也可手动左右键换源
 - 支持遥控器上下键在当前分类内快速切台
-- 记录观看历史（含上次使用的源）
-
-### 4. 视频点播功能
-- 支持选集、画质、倍速调节
-- 支持播放进度记录
-- 支持搜索功能
+- 记录观看历史（含上次使用的源）与收藏
 
 ## 编译和运行
 
@@ -213,17 +179,12 @@ cd android
 
 # Release版本（无签名密钥时自动回退 debug 签名，产物同样可安装）
 ./gradlew assembleRelease
-
-# 按 CPU 架构拆包（额外产出 4 个分包 + 1 个通用包）
-./gradlew assembleRelease -PabiSplit
 ```
 
 产物路径：`android/app/build/outputs/apk/release/`
-- 通用包：`taotao-tv-<versionName>.apk`
-- 分包（`-PabiSplit`）：`taotao-tv-<versionName>-arm64-v8a.apk` 等
+- `taotao-tv-<versionName>.apk`（固定单个通用包，不做 ABI 拆分）
 
-默认只出通用包：本工程是纯 Java + 内置网页，**没有任何 `.so`**，拆包出来的内容完全一样，
-并不会有体积收益，所以拆包开关默认关闭，将来引入原生库后再打开。
+本工程是纯 Java + 内置网页，**没有任何 `.so`**，拆分 ABI 不会带来任何体积收益，所以固定只出一个通用包。
 
 ### 版本号（按编译时间自动生成）
 不再写死，默认取编译那一刻：
@@ -243,23 +204,27 @@ Release 构建已开启，无需额外参数：
 - `packaging.resources.excludes`：剔除 `META-INF/*`、`kotlin/**`、`DebugProbesKt.bin` 等构建元数据
 - `dependenciesInfo includeInApk false`：不写入依赖信息
 
-当前 Release 通用包约 **963 KB**（优化前 3.6 MB）。
+当前 Release 通用包约 **910 KB**（优化前 3.6 MB）。
 
 ## 注意事项
 
 1. **WebView 内核**: 直接使用设备自带的系统 WebView，不再下载任何第三方内核；因此不产生额外启动耗时与安装包体积
-2. **横屏强制**: 所有Activity都设置为横屏模式（`SCREEN_ORIENTATION_LANDSCAPE`）
-3. **SingleTask模式**: 主要Activity使用`singleTask`启动模式，避免重复创建
+2. **横屏强制**: Activity 设置为横屏模式（`SCREEN_ORIENTATION_LANDSCAPE`）
+3. **SingleTask模式**: Activity 使用 `singleTask` 启动模式，避免重复创建
 4. **WebView内存**: 注意WebView的内存管理，及时释放资源
 5. **焦点处理**: TV应用需要特别注意焦点处理，确保遥控器可以正常导航
 6. **assets 不入库**: `android/app/src/main/assets/tv-web` 由 `scripts/build-web.js` 生成，仓库里不提交
-7. **架构拆包的两个坑（AGP 8.12 实测）**: `splits.abi` 里**不能**调用 `reset()`——内部判定是
-   `isAbiEnabled() = !isReset && enable`，出现过一次 `reset()` 拆包就被永久关掉；
-   另外 `include(...)` 已是空实现（不报错但不生效），要限制架构范围得用 `exclude(...)`。
-   改 APK 文件名时也不能在 `variant.outputs.all {}` 里用隐式的 `output`，会抛
-   `MissingPropertyException`，被 catch 吞掉后所有分包重名互相覆盖（只剩一个文件甚至写出损坏的 zip）。
+7. **零远端依赖**: 除播放地址本身外，应用不发起任何自建服务端请求。新增代码**不得**引入 `api.tv.xu42.com` 一类的远端调用，数据一律内置在 `assets/` 中。
 
 ## 更新日志
+
+### v1.2.0 (2026-09-18)
+- ✅ **移除影视（点播）模块**：删除 `MainActivity` / `BaseWebViewActivity` / 影视相关 domain、layout、网页与适配源，应用首页即直播页
+- ✅ **启动即播**：打开应用直接续播上次频道（无记录则 CCTV-1），删除 `StartActivity` / `HomeActivity`
+- ✅ **彻底移除远端依赖**：删除 `ConfigApi`、DNS、崩溃上报、资源热更新、APK 自升级、频道代理等全部服务端相关代码与权限
+- ✅ 新增本地 `hls.min.js`，内嵌网页不再依赖 CDN
+- ✅ 恢复**单一通用 APK** 产出，移除 ABI 拆包逻辑
+- ✅ 包体进一步下降，Release 包约 910 KB
 
 ### v1.1.0 (2026-09-18)
 - ✅ 直播切台改为**二级分类菜单**（左分类 / 右频道），列表不再展示源
@@ -267,7 +232,7 @@ Release 构建已开启，无需额外参数：
 - ✅ 移除百视通（bestv）源及其网页分支
 - ✅ 版本号改为按编译时间自动生成（`versionName=yyyyMMdd.HHmm` / `versionCode=yyMMddHH`）
 - ✅ 体积优化：R8 + shrinkResources + 资源裁剪，Release 包 3.6MB → 963KB
-- ✅ 新增可选 ABI 拆包开关 `-PabiSplit`（分包 + 通用包）
+- ✅ 新增可选 ABI 拆包开关 `-PabiSplit`（分包 + 通用包）<span title="v1.2.0 已移除">（v1.2.0 已回退为单一通用包）</span>
 - ✅ 清理无用目录与文件（`util/`、`img/`、`web/tv-web` 下废弃页面与脚本）
 
 ### v1.0.0 (2025-10-03)

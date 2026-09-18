@@ -19,17 +19,12 @@ echo "[1/4] 清理旧的构建文件..."
 
 echo ""
 echo "[2/4] 编译 Release 版本..."
-# 额外参数会透传给 gradle，例如：./build_release.sh -PabiSplit -PversionName=1.0.0
+# 额外参数会透传给 gradle，例如：./build_release.sh -PversionName=1.0.0
 ./gradlew assembleRelease "$@"
 
-# 查找生成的 APK 文件（优先通用包：不带 ABI 后缀；拆包时避免误装分包）
+# 查找生成的 APK 文件（单一 APK 产出，取最新的一个）
 APK_DIR="$SCRIPT_DIR/app/build/outputs/apk/release"
-APK_FILE=$(find "$APK_DIR" -maxdepth 1 -name "*.apk" -type f \
-    ! -name "*-arm64-v8a.apk" ! -name "*-armeabi-v7a.apk" \
-    ! -name "*-x86.apk" ! -name "*-x86_64.apk" 2>/dev/null | sort | head -n 1)
-if [ -z "$APK_FILE" ]; then
-    APK_FILE=$(find "$APK_DIR" -maxdepth 1 -name "*.apk" -type f 2>/dev/null | sort | head -n 1)
-fi
+APK_FILE=$(ls -t "$APK_DIR"/*.apk 2>/dev/null | head -n 1)
 
 if [ -z "$APK_FILE" ]; then
     echo "❌ 错误：未找到生成的 APK 文件"
@@ -72,7 +67,7 @@ read -p "是否启动应用？(y/n) " -n 1 -r
 echo
 if [[ $REPLY =~ ^[Yy]$ ]]; then
     echo "🚀 启动应用..."
-    adb shell am start -n com.xu42.tv.live/.StartActivity
+    adb shell am start -n com.xu42.tv.live/.LiveActivity
     echo "✅ 应用已启动"
 fi
 

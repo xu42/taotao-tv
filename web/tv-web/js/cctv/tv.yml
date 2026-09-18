@@ -1046,25 +1046,12 @@ data:
       - name: 深圳国际
         url: https://www.sztv.com.cn/dianshi.shtml?id=7944&u-link=1
   #四川
+  #说明：原来这里的 8 个四川频道走的是自建服务端代理（/channel/proxy），
+  #应用已改为纯本地运行，不再依赖任何自有服务端，因此这些频道已移除。
+  #四川卫视在「卫视」分组里仍有央视频源，可以正常观看。
   - tag: sctv
     name: 四川
     vods:
-      - name: 四川卫视
-        url: https://www.sctv.com/tv-web/js/tv/sctv/live.html?tag=1
-      - name: 四川新闻
-        url: https://www.sctv.com/tv-web/js/tv/sctv/live.html?tag=2
-      - name: 四川经济
-        url: https://www.sctv.com/tv-web/js/tv/sctv/live.html?tag=3
-      - name: 四川文化旅游
-        url: https://www.sctv.com/tv-web/js/tv/sctv/live.html?tag=4
-      - name: 四川影视文艺
-        url: https://www.sctv.com/tv-web/js/tv/sctv/live.html?tag=5
-      - name: 四川妇女儿童
-        url: https://www.sctv.com/tv-web/js/tv/sctv/live.html?tag=6
-      - name: 四川乡村
-        url: https://www.sctv.com/tv-web/js/tv/sctv/live.html?tag=8
-      - name: 四川康巴卫视
-        url: https://www.sctv.com/tv-web/js/tv/sctv/live.html?tag=9
       - name: 重庆新闻综合
         url: https://www.cbg.cn/web/list/4918/1.html?5DEFC70C1A4AOD5173881C62BD4ACAD0
       - name: 南江综合

@@ -48,7 +48,8 @@ _data={
             return "tv/jltv"
         }
         if(url.startsWith("https://www.lcxw.cn/")){
-            _tvLoadRes.js("https://cdn.bootcdn.net/ajax/libs/hls.js/1.5.13/hls.js");
+            // hls.js 已内置到 APK 资源里（js/hls.min.js），不再依赖外部 CDN
+            _tvLoadRes.js(_browser.getURL("js/hls.min.js"));
             return "tv/lctv"
         }
         if(url.startsWith("https://www.fengshows.com/")){

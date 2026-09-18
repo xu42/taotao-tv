@@ -18,7 +18,6 @@ import androidx.annotation.RequiresApi;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.nio.charset.Charset;
-import java.text.MessageFormat;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -34,18 +33,17 @@ import com.xu42.tv.live.util.TplUtil;
 import com.xu42.tv.live.util.Util;
 
 /**
- * 基于系统内核（android.webkit）的 WebViewClient 实现。
- * 内置网页走「伪源」https://tv.xu42.com/tv-web/，由本类从 assets / 私有目录读取，不产生网络请求。
+ * 直播页专用的 WebViewClient（系统内核 android.webkit）。
+ *
+ * 两件核心事情：
+ * 1) 内置页面走「伪源」https://tv.xu42.com/tv-web/ —— 任何路径里带 tv-web/ 的请求
+ *    都由本类从 APK 的 assets 读取返回，不产生网络请求；
+ * 2) 上报主文档加载失败，供直播页做「自动换源」。
  */
 public class WebViewClientImpl extends WebViewClient {
-    private static String TAG = "WebViewClient";
-    private Context context;
-    private WebView mWebView;
-
-    private static String lastUrl = null;
-    private static String rootUrl = null;
-    private static String currentUrl = null;
-    private int type;
+    private static final String TAG = "WebViewClient";
+    private final Context context;
+    private final WebView mWebView;
 
     /**
      * 主文档加载失败的回调。直播页用它来触发「自动换源」：
@@ -68,10 +66,9 @@ public class WebViewClientImpl extends WebViewClient {
         }
     }
 
-    public WebViewClientImpl(Context context, WebView mWebView, int type) {
+    public WebViewClientImpl(Context context, WebView mWebView) {
         this.context = context;
         this.mWebView = mWebView;
-        this.type = type;
     }
 
     @Override
@@ -92,48 +89,24 @@ public class WebViewClientImpl extends WebViewClient {
     @Override
     public void onPageStarted(WebView view, String url, Bitmap favicon) {
         LogUtil.i(TAG, "onPageStarted , url:" + url);
-        currentUrl = url;
-        if (url.contains("tv-web")) {
-            if (isRootPage(url)) {
-                rootUrl = url;
-            }
-            lastUrl = url;
-        }
     }
 
-    /** 应用内置页面的「根页面」：影视聚合页（旧版为 index.html） */
-    public static boolean isRootPage(String url) {
-        if (null == url) {
-            return false;
-        }
-        int idx = url.indexOf("?");
-        String pure = idx > 0 ? url.substring(0, idx) : url;
-        return pure.endsWith("video.html") || pure.endsWith("index.html");
-    }
-
-    private String getFileContent(String url) {
+    /** 页面加载完成后再注入「直播台页增强脚本」（统一播放器尺寸、修正视口等） */
+    private String getFileContent() {
         String baseFolder = "tv-web/";
-        if (url.contains(baseFolder)) {
-            return null;
-        }
         String fileContent = FileUtil.readExt(MyApplication.getAppContext(), baseFolder + "js/end.js");
-        String detailFile = "js/load_detail_video.js";
-        if (type == 1) {
-            detailFile = "js/load_detail_tv.js";
-        }
-        return fileContent + FileUtil.readExt(MyApplication.getAppContext(), baseFolder + detailFile);
+        return fileContent + FileUtil.readExt(MyApplication.getAppContext(),
+                baseFolder + "js/load_detail_tv.js");
     }
 
     @Override
     public void onPageFinished(WebView view, String url) {
         LogUtil.i(TAG, "onPageFinished, url:" + url);
         if (mWebView.getProgress() == 100) {
-            LogUtil.i(TAG, "onPageFinished XX, url:" + url);
-            String fileContent = getFileContent(url);
+            String fileContent = getFileContent();
             if (null == fileContent) {
                 return;
             }
-            LogUtil.i(TAG, "fileContent end:");
             view.evaluateJavascript(fileContent, new ValueCallback<String>() {
                 @Override
                 public void onReceiveValue(String s) {
@@ -194,81 +167,61 @@ public class WebViewClientImpl extends WebViewClient {
      */
     private WebResourceResponse intercept(WebView webView, String url, String method,
                                           Map<String, String> orgHeader) {
-        //无图 Dec-Fetch-Dest
         String accept = orgHeader == null ? null : orgHeader.get("Accept");
-        String orgUrl = url;
         if (orgHeader == null) {
             orgHeader = new HashMap<String, String>();
         }
 
-        if (type == 1) {
-            if (orgUrl.startsWith("https://tlive.fengshows.com/live/")
-                    || orgUrl.startsWith("https://hkmolive.fengshows.com/live/")) {
-                String realUrl = "https://qctv.fengshows.cn" + orgUrl.substring(orgUrl.indexOf("/live"));
-                LogUtil.i(TAG, realUrl);
-                Map<String, String> headerMap = new HashMap<>();
-                InputStream inputStream = HttpUtil.get(realUrl, new HashMap<String, String>());
-                if (null == inputStream) {
-                    return null;
-                }
-                WebResourceResponse resp = new WebResourceResponse("video/x-flv",
-                        ConstantMy.UTF8, inputStream);
-                headerMap.put("access-control-allow-origin", "*");
-                resp.setResponseHeaders(headerMap);
-                return resp;
+        // 凤凰秀：站点把 /live/ 放在 tl/hkmolive 域上，换到真实域名并补上流响应头
+        if (url.startsWith("https://tlive.fengshows.com/live/")
+                || url.startsWith("https://hkmolive.fengshows.com/live/")) {
+            String realUrl = "https://qctv.fengshows.cn" + url.substring(url.indexOf("/live"));
+            LogUtil.i(TAG, realUrl);
+            Map<String, String> headerMap = new HashMap<>();
+            InputStream inputStream = HttpUtil.get(realUrl, new HashMap<String, String>());
+            if (null == inputStream) {
+                return null;
             }
-
-            //广东
-            if (orgUrl.startsWith("https://gdtv-api.gdtv.cn/api/tv/v2/tvChannel")) {
-                LogUtil.i(TAG, orgUrl);
-                LogUtil.i(TAG, orgHeader.get("x-itouchtv-ca-key"));
-                // 仅在 GET 请求时转发请求头；预检(OPTIONS)直接放过
-                if (!"GET".equalsIgnoreCase(method)) {
-                    return null;
-                }
-                Map<String, String> headerMap = new HashMap<>(orgHeader);
-                headerMap.remove("x-requested-with");
-                LogUtil.i(TAG, JsonUtil.toJson(headerMap));
-                String json = HttpUtil.getJson(orgUrl, headerMap);
-                LogUtil.i(TAG, json);
-                WebResourceResponse resp = new WebResourceResponse("application/json;charset=UTF-8",
-                        ConstantMy.UTF8, new ByteArrayInputStream(json.getBytes(Charset.defaultCharset())));
-                headerMap.put("access-control-allow-origin", "*");
-                resp.setResponseHeaders(headerMap);
-                return resp;
-            }
-
-            //拦截m3u8链接
-            if (url.contains(".m3u8") && currentUrl != null && currentUrl.contains("u-link=1")) {
-                String js = MessageFormat.format(
-                        "sessionStorage.setItem(\"{0}\",\"{1}\");sessionStorage.setItem(\"{2}\",\"{3}\");",
-                        "u-m3u8", url, "u-loc", currentUrl);
-                Util.evalOnUi(webView, js);
-            }
+            WebResourceResponse resp = new WebResourceResponse("video/x-flv",
+                    ConstantMy.UTF8, inputStream);
+            headerMap.put("access-control-allow-origin", "*");
+            resp.setResponseHeaders(headerMap);
+            return resp;
         }
 
-        if (null != accept && accept.startsWith("image/") && !imageLoad(url)) {
-            // 返回空响应体以阻止该图片请求
+        // 广东台：接口要求带 x-itouchtv-ca-key 等头部，浏览器发不出去，由原生代发
+        if (url.startsWith("https://gdtv-api.gdtv.cn/api/tv/v2/tvChannel")) {
+            LogUtil.i(TAG, url);
+            if (!"GET".equalsIgnoreCase(method)) {
+                return null;
+            }
+            Map<String, String> headerMap = new HashMap<>(orgHeader);
+            headerMap.remove("x-requested-with");
+            String json = HttpUtil.getJson(url, headerMap);
+            LogUtil.i(TAG, json);
+            WebResourceResponse resp = new WebResourceResponse("application/json;charset=UTF-8",
+                    ConstantMy.UTF8, new ByteArrayInputStream(json.getBytes(Charset.defaultCharset())));
+            headerMap.put("access-control-allow-origin", "*");
+            resp.setResponseHeaders(headerMap);
+            return resp;
+        }
+
+        // 电视/盒子上带宽宝贵：非必要的图片直接返回空响应体，避免拖慢播放页
+        if (null != accept && accept.startsWith("image/") && !allowImage(url)) {
             return new WebResourceResponse(null, null, null);
         }
 
         int index = url.indexOf("tv-web");
         if (index < 0) {
-            if ("GET".equals(method) && url.startsWith("https://mesh.if.iqiyi")) {
-                if (url.startsWith("https://mesh.if.iqiyi.com/tvg/v2/lw/base_info")) {
-                    Util.evalOnUi(webView, Util.sessionStorageWithTime("iqiyiXj", url));
-                }
-            }
             return null;
         }
 
+        // 下面是「伪源」资源：一律从 APK 内置 assets 读取
         if (url.endsWith("tvImg=1")) {
-            if (index > 0) {
-                String fileName = url.substring(index, url.indexOf("?"));
-                LogUtil.i(TAG, "fileName image " + fileName);
-                return new WebResourceResponse("image/jpeg",
-                        ConstantMy.UTF8, FileUtil.readExtIn(MyApplication.getAppContext(), fileName));
-            }
+            String fileName = url.substring(index, url.indexOf("?"));
+            LogUtil.i(TAG, "fileName image " + fileName);
+            return new WebResourceResponse("image/jpeg",
+                    ConstantMy.UTF8, FileUtil.readExtIn(MyApplication.getAppContext(), fileName));
         }
 
         int indexWen = url.indexOf("?");
@@ -276,106 +229,50 @@ public class WebViewClientImpl extends WebViewClient {
             url = url.substring(0, indexWen);
         }
 
+        String fileName = url.substring(index);
+
         if (url.endsWith("js")) {
-            if (index > 0) {
-                String fileName = url.substring(index);
-                LogUtil.i(TAG, "fileName js " + fileName);
-                if (fileName.endsWith("basex.js")) {
-                    return new WebResourceResponse("text/html",
-                            ConstantMy.UTF8,
-                            new ByteArrayInputStream(baseJs(fileName).getBytes(Charset.defaultCharset())));
-                }
+            LogUtil.i(TAG, "fileName js " + fileName);
+            if (fileName.endsWith("basex.js")) {
                 return new WebResourceResponse("text/javascript",
-                        ConstantMy.UTF8, FileUtil.readExtIn(MyApplication.getAppContext(), fileName));
+                        ConstantMy.UTF8,
+                        new ByteArrayInputStream(baseJs(fileName).getBytes(Charset.defaultCharset())));
             }
+            return new WebResourceResponse("text/javascript",
+                    ConstantMy.UTF8, FileUtil.readExtIn(MyApplication.getAppContext(), fileName));
         }
         if (url.endsWith("css")) {
-            if (index > 0) {
-                String fileName = url.substring(index);
-                LogUtil.i(TAG, "fileName css " + fileName);
-                return new WebResourceResponse("text/css",
-                        ConstantMy.UTF8, FileUtil.readExtIn(MyApplication.getAppContext(), fileName));
-            }
+            LogUtil.i(TAG, "fileName css " + fileName);
+            return new WebResourceResponse("text/css",
+                    ConstantMy.UTF8, FileUtil.readExtIn(MyApplication.getAppContext(), fileName));
         }
         if (url.endsWith(".html")) {
-            if (index > 0) {
-                String fileName = url.substring(index);
-                LogUtil.i(TAG, "fileName html " + fileName);
-                String html = FileUtil.readExt(MyApplication.getAppContext(), fileName);
-                html = html.replace("base.js", "basex.js");
-                return new WebResourceResponse("text/html",
-                        ConstantMy.UTF8, new ByteArrayInputStream(html.getBytes(Charset.defaultCharset())));
-            }
+            LogUtil.i(TAG, "fileName html " + fileName);
+            String html = FileUtil.readExt(MyApplication.getAppContext(), fileName);
+            // base.js 需要做模板替换，用 basex.js 承接
+            html = html.replace("base.js", "basex.js");
+            return new WebResourceResponse("text/html",
+                    ConstantMy.UTF8, new ByteArrayInputStream(html.getBytes(Charset.defaultCharset())));
         }
         if (url.endsWith(".woff2")) {
-            if (index > 0) {
-                String fileName = url.substring(index);
-                LogUtil.i(TAG, "fileName woff2 " + fileName);
-                return new WebResourceResponse("font/woff2",
-                        ConstantMy.UTF8, FileUtil.readExtIn(MyApplication.getAppContext(), fileName));
-            }
+            LogUtil.i(TAG, "fileName woff2 " + fileName);
+            return new WebResourceResponse("font/woff2",
+                    ConstantMy.UTF8, FileUtil.readExtIn(MyApplication.getAppContext(), fileName));
         }
 
         return null;
     }
 
+    /** 允许加载的图片：内置页面的台标，以及央视的频道图 */
+    private boolean allowImage(String url) {
+        return url.contains("tvImg") || url.contains("cctvpic.com") || url.contains("default");
+    }
+
+    /** basex.js 是带占位符的模板：只注入本地版本号，没有任何服务端地址 */
     private String baseJs(String fileName) {
         String baseStr = FileUtil.readExt(MyApplication.getAppContext(), fileName);
         Map<String, Object> data = new HashMap<>();
         data.put("version", AppVersionUtils.getVersionCode());
-        data.put("apiBase", AppConfig.API_BASE);
         return TplUtil.tpl(baseStr, data);
-    }
-
-    private boolean imageLoad(String url) {
-        if (url.contains("tvImg")) {
-            return true;
-        }
-        if (url.contains("cctvpic.com")) {
-            return true;
-        }
-        if (url.contains("default")) {
-            return true;
-        }
-        if (url.contains("open.weixin.qq.com/connect/qrcode")) {
-            String code = Util.loginQr(url, "微信");
-            LogUtil.i(TAG, "imageLoad: " + code);
-            Util.evalOnUi(mWebView, code);
-            return true;
-        }
-        //ssl.ptlogin2.qq.com/ptqrshow
-        if (url.contains("ptlogin2.qq.com/ssl/ptqrshow")) {
-            String code = Util.loginQr(url, "手机端qq");
-            LogUtil.i(TAG, "imageLoad: " + code);
-            Util.evalOnUi(mWebView, code);
-            return true;
-        }
-        if (url.startsWith("https://img.alicdn.com/imgextra/") && url.endsWith("xcode.png")) {
-            String code = Util.loginQr(url, "youkuQr");
-            LogUtil.i(TAG, "imageLoad: " + code);
-            Util.evalOnUi(mWebView, code);
-            return true;
-        }
-        return false;
-    }
-
-    public static Boolean currentUrlIsHome() {
-        if (null == currentUrl) {
-            return false;
-        }
-        return currentUrl.contains("tv-web");
-    }
-
-    public static String backUrl() {
-        if (null == currentUrl) {
-            return null;
-        }
-        if (currentUrl.contains("tv-web")) {
-            if (isRootPage(currentUrl)) {
-                return null;
-            }
-            return null == rootUrl ? AppConfig.pageUrl(AppConfig.VIDEO_PAGE) : rootUrl;
-        }
-        return lastUrl;
     }
 }

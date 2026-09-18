@@ -4,7 +4,6 @@ import android.content.Context;
 
 import com.google.gson.reflect.TypeToken;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -16,20 +15,14 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import com.xu42.tv.live.MyApplication;
-import com.xu42.tv.live.api.ConfigApi;
-import com.xu42.tv.live.call.DownloadCallback;
 import com.xu42.tv.live.dao.Favorite;
-import com.xu42.tv.live.domain.ConfigDTO;
-import com.xu42.tv.live.domain.Res;
 import com.xu42.tv.live.domain.live.DataWrapper;
 import com.xu42.tv.live.domain.live.Live;
 import com.xu42.tv.live.domain.live.Vod;
 import com.xu42.tv.live.util.AppConfig;
 import com.xu42.tv.live.util.FileUtil;
-import com.xu42.tv.live.util.HttpUtil;
 import com.xu42.tv.live.util.JsonUtil;
 import com.xu42.tv.live.util.LogUtil;
-import com.xu42.tv.live.util.Util;
 
 /**
  * 频道数据服务。
@@ -43,32 +36,13 @@ import com.xu42.tv.live.util.Util;
  *   - 任一源地址都能通过 {@link #getByUrl(String)} 反查到它属于哪个频道
  *
  * 界面上因此只需要展示「频道」，换源交给播放时的左右键与自动降级逻辑。
+ *
+ * 频道数据只有一个来源：APK 内置的 assets/tv-web/js/cctv/tv.json（由 tv.yml 生成），
+ * 不再有任何网络拉取或资源热更新。
  */
 public class UpdateService {
 
     private static final String TAG = "UpdateService";
-    public static String baseFolder;
-
-    public static void updateRes(Context context) {
-        try {
-            updateResWithError(context);
-        } catch (Exception e) {
-            //e.printStackTrace();
-            //LogUtil.e(TAG, Objects.requireNonNull(e.getMessage()));
-        }
-    }
-
-    public static void updateResWithError(Context context) throws IOException {
-        //copyAssets 到应用目录
-        String tvWebZip = "tv-web";
-        boolean isDev = Util.isDev();
-        LogUtil.i(TAG, "isDev " + isDev);
-        baseFolder = context.getFilesDir().getPath();
-        String toZipFilePath = baseFolder + "/" + tvWebZip + ".zip";
-        new Thread(() -> {
-            checkOnlineVersion(toZipFilePath);
-        }).start();
-    }
 
     // ------------------------------------------------------------------ 源识别
 
@@ -480,40 +454,5 @@ public class UpdateService {
             return null;
         }
         return indexVodMap.get(key);
-    }
-
-    private static void checkOnlineVersion(String toZipFilePath) {
-        ConfigDTO newConfig = ConfigApi.getConfig();
-        if (null == newConfig) {
-            return;
-        }
-        if (null == newConfig.getRes() || !newConfig.getRes().getUpdate()) {
-            LogUtil.i(TAG, "checkOnlineVersion updateRes false");
-            return;
-        }
-        Res resNew = newConfig.getRes();
-        String oldJson = FileUtil.readExt(MyApplication.getAppContext(), "tv-web/update.json");
-        LogUtil.i(TAG, " checkOnlineVersion old " + oldJson);
-        if (oldJson.trim().isEmpty()) {
-            return;
-        }
-        ConfigDTO oldConfig = JsonUtil.fromJson(oldJson, ConfigDTO.class);
-        Res resOld = oldConfig.getRes();
-        if (null != resOld && resNew.getVersion() > resOld.getVersion()) {//res版本更新
-
-            String downloadUrl = resNew.getUrl();
-            LogUtil.i(TAG, "版本更新到 " + resNew.getVersion() + " toZipFilePath" + toZipFilePath + " download:" + downloadUrl);
-            HttpUtil.download(downloadUrl, baseFolder, "tv-web.zip", new DownloadCallback() {
-                @Override
-                public void downloaded() {
-                    try {
-                        LogUtil.i(TAG, "downloaded");
-                        FileUtil.unzipFile(toZipFilePath, baseFolder + "/tv-web", resNew.getSkipFirst());
-                    } catch (IOException e) {
-                        LogUtil.e(TAG, "downloaded: " + e.getMessage());
-                    }
-                }
-            });
-        }
     }
 }

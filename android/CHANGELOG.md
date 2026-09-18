@@ -1,5 +1,28 @@
 # 更新日志
 
+## v1.2.0 (2026-09-18) - 纯本地单模块版
+
+### 新增 / 改动
+- ✅ **移除影视（点播）模块**：删除 `MainActivity` / `BaseWebViewActivity`、
+  影视相关 `domain`（DetailMenu / JdItem / RateItem / XjItem…）、`layout`（activity_main / item_jd…）、
+  内置网页 (`video.html`、`js/video/`、各聚合源适配代码) 与 `bestv` 之外的全部点播分支
+- ✅ **应用首页即直播页**：启动直接进入 `LiveActivity`，**续播上次观看的频道**，
+  无历史记录时默认播 **CCTV-1**；删除 `StartActivity` / `HomeActivity` 及其布局
+- ✅ **彻底移除远端依赖（纯本地）**：
+  - 删除 `api/ConfigApi`、`call/*` 回调、`domain/ConfigDTO|Res|ApkInfo|ExtConfig|VersionData` 等服务端契约
+  - 删除 DNS（`dns/HttpDns*`）、崩溃上报、网页资源热更新、APK 自升级、频道代理 `/channel/proxy`
+  - 权限收敛为 `INTERNET` + `ACCESS_NETWORK_STATE`（去掉 `RECEIVE_BOOT_COMPLETED`、`REQUEST_INSTALL_PACKAGES`、`ACCESS_WIFI_STATE`）
+  - 删除 `BootReceiver`、`FileProvider`(`xml/file_path.xml`)
+  - `docs/server-api.md` 已删除
+- ✅ **恢复单一 APK 产出**：移除 ABI 拆包逻辑（`splits.abi`、`-PabiSplit`），固定只出
+  `taotao-tv-<versionName>.apk`
+- ✅ **新增本地 `hls.min.js`**：内嵌网页不再依赖 CDN，彻底离线可用
+- ✅ 删除依赖服务端代理的 8 个四川频道（四川卫视仍可通过央视频源收看）
+- ✅ Release 包进一步下降到约 **910 KB**
+
+### 修复问题
+- ✅ 修复拆包时所有分包重名互相覆盖、写出损坏 APK 的问题
+
 ## v1.1.0 (2026-09-18) - 精简瘦身版
 
 ### 新增 / 改动
@@ -15,6 +38,7 @@
   Release 包从 3.6MB 降到 **963KB**
 - ✅ **可选 ABI 拆包**：`./gradlew assembleRelease -PabiSplit` 同时产出
   arm64-v8a / armeabi-v7a / x86 / x86_64 四个分包 + 一个通用包；默认只出通用包
+  _（v1.2.0 已回退为单一通用包）_
 - ✅ **移除 X5（TBS）内核**，改用系统 WebView；包名 `tv.utao.x5` → `com.xu42.tv.live`
 - ✅ 清理无用目录与文件：`util/`、`img/`、`web/tv-web` 下废弃页面与脚本
 

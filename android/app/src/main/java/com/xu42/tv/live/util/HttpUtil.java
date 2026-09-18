@@ -1,18 +1,10 @@
 package com.xu42.tv.live.util;
 
-import android.util.Log;
-
-import org.jetbrains.annotations.NotNull;
-
-import java.io.BufferedInputStream;
-import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
 import java.util.Map;
-import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
 import javax.net.ssl.SSLContext;
@@ -20,299 +12,142 @@ import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
 
-import okhttp3.Call;
-import okhttp3.Callback;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
-import com.xu42.tv.live.call.DownloadCallback;
-import com.xu42.tv.live.call.DownloadProgressListener;
-import com.xu42.tv.live.dns.HttpDns;
 
+/**
+ * 直播页面用的轻量 HTTP 客户端。
+ *
+ * 用途只有一件事：网页里通过 JS 桥（_api.getJson / postJson）发起的跨域请求
+ * 由原生代发，从而绕过浏览器同源限制（广东、凤凰秀等源站需要自定义请求头）。
+ *
+ * 应用自身不请求任何自有服务端，因此这里没有下载 / 上报之类的接口。
+ */
 public class HttpUtil {
-    private static String TAG = "HttpUtil";
-    public static final String METHOD_GET = "GET";
-    public static final String METHOD_POST = "POST";
+    private static final String TAG = "HttpUtil";
 
     private static final int DEFAULT_TIMEOUT = 5;
     private static OkHttpClient defaultClient = null;
-    private static OkHttpClient noRedirectClient = null;
-    private static final Object lockO = new Object();
+
     static {
         defaultClient();
-        noRedirectClient();
     }
-/*    public static OkHttpClient defaultClient() {
-        synchronized (lockO) {
-            if (defaultClient == null) {
-                OkHttpClient.Builder builder = new OkHttpClient.Builder()
-                        .readTimeout(DEFAULT_TIMEOUT, TimeUnit.SECONDS)
-                        .writeTimeout(DEFAULT_TIMEOUT, TimeUnit.SECONDS)
-                        .connectTimeout(DEFAULT_TIMEOUT, TimeUnit.SECONDS)
-                        .retryOnConnectionFailure(true)
-                        .sslSocketFactory(new SSLSocketFactoryCompat(SSLSocketFactoryCompat.trustAllCert), SSLSocketFactoryCompat.trustAllCert);
-                defaultClient = builder.build();
-            }
-            return defaultClient;
-        }
-    }*/
+
     public static void defaultClient() {
         OkHttpClient.Builder builder = new OkHttpClient.Builder()
                 .readTimeout(DEFAULT_TIMEOUT, TimeUnit.SECONDS)
                 .writeTimeout(DEFAULT_TIMEOUT, TimeUnit.SECONDS)
                 .connectTimeout(DEFAULT_TIMEOUT, TimeUnit.SECONDS)
                 .retryOnConnectionFailure(true)
-                .sslSocketFactory(new SSLSocketFactoryCompat(SSLSocketFactoryCompat.trustAllCert), SSLSocketFactoryCompat.trustAllCert);
-        builder=ignoreSSL(builder);
-        defaultClient = builder
-                  .dns(new HttpDns())
-                  .build();
+                .sslSocketFactory(new SSLSocketFactoryCompat(SSLSocketFactoryCompat.trustAllCert),
+                        SSLSocketFactoryCompat.trustAllCert);
+        builder = ignoreSSL(builder);
+        defaultClient = builder.build();
     }
-    public static OkHttpClient.Builder ignoreSSL (OkHttpClient.Builder builder) {
+
+    public static OkHttpClient.Builder ignoreSSL(OkHttpClient.Builder builder) {
         builder.sslSocketFactory(createSSLSocketFactory())
                 .hostnameVerifier((s, sslSession) -> true);
         return builder;
     }
 
-    private static SSLSocketFactory createSSLSocketFactory () {
-
+    private static SSLSocketFactory createSSLSocketFactory() {
         SSLSocketFactory sSLSocketFactory = null;
-
         try {
             SSLContext sc = SSLContext.getInstance("TLS");
             sc.init(null, new TrustManager[]{new TrustAllManager()}, new SecureRandom());
             sSLSocketFactory = sc.getSocketFactory();
         } catch (Exception e) {
-            //LOGGER.info(e.getMessage(), e);
+            LogUtil.e(TAG, e.getMessage());
         }
-
         return sSLSocketFactory;
     }
 
     private static class TrustAllManager implements X509TrustManager {
 
         @Override
-        public void checkClientTrusted (java.security.cert.X509Certificate[] x509Certificates,
-                                        String s) throws java.security.cert.CertificateException {
-
+        public void checkClientTrusted(X509Certificate[] x509Certificates, String s) {
         }
 
         @Override
-        public void checkServerTrusted (java.security.cert.X509Certificate[] x509Certificates,
-                                        String s) throws java.security.cert.CertificateException {
-
+        public void checkServerTrusted(X509Certificate[] x509Certificates, String s) {
         }
 
-
         @Override
-        public java.security.cert.X509Certificate[] getAcceptedIssuers () {
+        public X509Certificate[] getAcceptedIssuers() {
             return new X509Certificate[0];
         }
     }
-    public static boolean isErrorResponse(String json){
-        if(!json.startsWith("{")||json.equals("400")||json.equals("500")){
-            return true;
-        }
-        return false;
-    }
-    public static void noRedirectClient() {
-        OkHttpClient.Builder builder = new OkHttpClient.Builder()
-                .readTimeout(DEFAULT_TIMEOUT, TimeUnit.SECONDS)
-                .writeTimeout(DEFAULT_TIMEOUT, TimeUnit.SECONDS)
-                .connectTimeout(DEFAULT_TIMEOUT, TimeUnit.SECONDS)
-                .followRedirects(false)
-                .followSslRedirects(false)
-                .retryOnConnectionFailure(true)
-                .sslSocketFactory(new SSLSocketFactoryCompat(SSLSocketFactoryCompat.trustAllCert), SSLSocketFactoryCompat.trustAllCert);
-        noRedirectClient = builder
-                .dns(new HttpDns())
-                .build();
-    }
-    public static final MediaType JSON
-            = MediaType.parse("application/json; charset=utf-8");
 
-    public static String postJson(String url,
-                            Map<String, String> headerMap, String requestBody) {
+    public static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
+
+    public static String postJson(String url, Map<String, String> headerMap, String requestBody) {
         RequestBody body = RequestBody.create(JSON, requestBody);
-        Request.Builder builder =new Request.Builder()
-                .url(url);
-        if(null!=headerMap&&!headerMap.isEmpty()){
-            for (Map.Entry<String, String> entry : headerMap.entrySet()) {
-                LogUtil.i(TAG,entry.getKey()+" "+entry.getValue());
-                if(entry.getKey().equals("tv-ref")){
-                    builder.addHeader("Referer",entry.getValue());
-                    continue;
-                }
-                builder.addHeader(entry.getKey(),entry.getValue());
-            }
-        }
-        Request request = builder
-                .post(body)
-                .build();
-       return responseDo(request);
-    }
-    public static   void  downloadQ(String url, String filesDirPath, String FILE_NAME, DownloadCallback downloadCallback)  {
-        InputStream inputStream =   HttpRequest.get(url).stream();
-        File target = new File(filesDirPath, FILE_NAME);
-        try {
-           FileOutputStream fileOutputStream = new FileOutputStream(target);
-            byte[] buffer = new byte[2048];
-            int len;
-            while ((len = inputStream.read(buffer)) != -1) {
-                fileOutputStream.write(buffer, 0, len);
-                // Log.d(TAG, "read: " + len);
-            }
-            fileOutputStream.flush();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-        downloadCallback.downloaded();
-    }
-    public static   void  download(String url,String filesDirPath,String FILE_NAME,DownloadCallback downloadCallback){
-        Request request = new Request.Builder().url(url).get().build();
-        Call call = defaultClient.newCall(request);
-        call.enqueue(new Callback() {
-            @Override
-            public void onFailure(@NotNull Call call, @NotNull IOException e) {
-                LogUtil.e(TAG, e.getMessage());
-            }
-
-            @Override
-            public void onResponse(@NotNull Call call, @NotNull Response response) throws IOException {
-                InputStream inputStream = Objects.requireNonNull(response.body()).byteStream();
-                File target = new File(filesDirPath, FILE_NAME);
-                FileOutputStream fileOutputStream = new FileOutputStream(target);
-                try {
-                    byte[] buffer = new byte[2048];
-                    int len;
-                    while ((len = inputStream.read(buffer)) != -1) {
-                        fileOutputStream.write(buffer, 0, len);
-                        // Log.d(TAG, "read: " + len);
-                    }
-                    fileOutputStream.flush();
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-                downloadCallback.downloaded();
-            }
-        });
+        Request.Builder builder = new Request.Builder().url(url);
+        addHeaders(builder, headerMap);
+        Request request = builder.post(body).build();
+        return responseDo(request);
     }
 
-        /**
-         * 带进度下载模式：DownloadProgressListener进度监听器
-         *
-         * @param url
-         * @param listener
-         */
-        public static void downloadByProgress(final String url, File targetFile,final DownloadProgressListener listener){
-            // 设置响应时间
-            OkHttpClient client=defaultClient;
-            Request request=new Request.Builder()
-                    .url(url)
-                    .build();
-            Call call=client.newCall(request);
-            call.enqueue(new Callback() {
-                @Override
-                public void onFailure(Call call, IOException e) {
-                    listener.onFailResponse();
-                }
-
-                @Override
-                public void onResponse(Call call, Response response) throws IOException {
-                   // File target = new File(filePath);
-                            //FileUtil.generateFile(url);
-                    InputStream is=response.body().byteStream();   //相应体获得inputStream
-                    BufferedInputStream bis=new BufferedInputStream(is);//将inputstream转换成bufferedinputstream
-                    byte[] content = new byte[1024];
-                    int len=0;                                          //每次读取长度
-                    long sumReaded = 0L;
-                    long contentSize=response.body().contentLength();   //下载文件总长度
-                    FileOutputStream fos=new FileOutputStream(targetFile);    //创建fileOutputStream
-                    while((len=bis.read(content))!=-1){                 //循环获取字节流
-                        fos.write(content,0,len);                  //写入文件，读取byte[]中的缓存
-                        sumReaded+=len;                                 //获取已下载长度
-                        listener.onDownloadProgress
-                                (sumReaded,contentSize,false); //监听下载进度，是否下载完成
-                    }
-                    listener.onDownloadResult(targetFile,true);
-                    fos.flush();
-                    fos.close();
-                    bis.close();
-                    is.close();
-                }
-            });
-        }
-    public static   InputStream get(String url,
-                                   Map<String, String> headerMap){
-        Request.Builder builder =new Request.Builder()
-                .url(url);
-        if(null!=headerMap&&!headerMap.isEmpty()){
-            for (Map.Entry<String, String> entry : headerMap.entrySet()) {
-                LogUtil.i(TAG,entry.getKey()+" "+entry.getValue());
-                if(entry.getKey().equals("tv-ref")){
-                    builder.addHeader("Referer",entry.getValue());
-                    continue;
-                }
-                builder.addHeader(entry.getKey(),entry.getValue());
-            }
-        }
-        Request request = builder
-                .get()
-                .build();
-        Response  response = null;
+    public static InputStream get(String url, Map<String, String> headerMap) {
+        Request.Builder builder = new Request.Builder().url(url);
+        addHeaders(builder, headerMap);
+        Request request = builder.get().build();
+        Response response = null;
         try {
             response = defaultClient.newCall(request).execute();
         } catch (IOException e) {
-          LogUtil.e(TAG,e.getMessage());
+            LogUtil.e(TAG, e.getMessage());
         }
-        if(null==response){
+        if (null == response || null == response.body()) {
             return null;
         }
         return response.body().byteStream();
     }
 
-    public static   String getJson(String url,
-                           Map<String, String> headerMap){
-        Request.Builder builder =new Request.Builder()
-                .url(url);
-        if(null!=headerMap&&!headerMap.isEmpty()){
-            for (Map.Entry<String, String> entry : headerMap.entrySet()) {
-                LogUtil.i(TAG,entry.getKey()+" "+entry.getValue());
-                if(entry.getKey().equals("tv-ref")){
-                    builder.addHeader("Referer",entry.getValue());
-                    continue;
-                }
-                builder.addHeader(entry.getKey(),entry.getValue());
-            }
-        }
-        Request request = builder
-                .get()
-                .build();
-        return responseDo(request);
+    public static String getJson(String url, Map<String, String> headerMap) {
+        Request.Builder builder = new Request.Builder().url(url);
+        addHeaders(builder, headerMap);
+        return responseDo(builder.get().build());
     }
 
-    private static String responseDo(Request request){
-        Response response =null;
-        try{
+    /** 网页约定：header 里的 tv-ref 表示要转成 Referer 发出去 */
+    private static void addHeaders(Request.Builder builder, Map<String, String> headerMap) {
+        if (null == headerMap || headerMap.isEmpty()) {
+            return;
+        }
+        for (Map.Entry<String, String> entry : headerMap.entrySet()) {
+            if (null == entry.getKey() || null == entry.getValue()) {
+                continue;
+            }
+            if ("tv-ref".equals(entry.getKey())) {
+                builder.addHeader("Referer", entry.getValue());
+                continue;
+            }
+            builder.addHeader(entry.getKey(), entry.getValue());
+        }
+    }
+
+    private static String responseDo(Request request) {
+        Response response = null;
+        try {
             response = defaultClient.newCall(request).execute();
-        }catch (IOException e){
-            e.printStackTrace();
-            LogUtil.e(TAG,"500 error: "+e.getMessage());
+        } catch (IOException e) {
+            LogUtil.e(TAG, "500 error: " + e.getMessage());
             return "500";
         }
-        if(!response.isSuccessful()){
-            LogUtil.e(TAG,"400 code: "+response.code());
+        if (!response.isSuccessful()) {
+            LogUtil.e(TAG, "400 code: " + response.code());
             return "400";
         }
-        try{
-            return  response.body().string();
-        }catch (IOException e){
-            e.printStackTrace();
-            LogUtil.e(TAG," 500 error response: "+e.getMessage());
+        try {
+            return null == response.body() ? "500" : response.body().string();
+        } catch (IOException e) {
+            LogUtil.e(TAG, " 500 error response: " + e.getMessage());
             return "500";
         }
     }
-
 }

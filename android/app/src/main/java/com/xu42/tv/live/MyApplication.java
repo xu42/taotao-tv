@@ -43,7 +43,6 @@ public class MyApplication extends Application  {
             androidId=getUUID();
         }
         CrashHandler.getInstance().init(this);
-        CrashHandler.uploadExceptionToServer(this);
         try {
             System.setProperty("persist.sys.media.use-mediaDrm", "false");
         } catch (Exception e) {

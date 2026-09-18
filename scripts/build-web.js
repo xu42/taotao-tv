@@ -3,17 +3,18 @@
  * 桃桃TV 前端资源打包脚本
  *
  * 作用：
- *   1) 执行 web/tv-web/node.js，把 yml 源数据转换成 json（tv.json / update.json / data/*.json）
+ *   1) 执行 web/tv-web/node.js，把 yml 源数据转换成 json（js/cctv/tv.json）
  *   2) 把 web/tv-web 下的静态资源拷贝到 android/app/src/main/assets/tv-web
- *      —— 这一步是安卓端能加载到页面和直播频道数据的前提
+ *      —— 这一步是安卓端能加载到直播页面和频道数据的前提
+ *
+ * 应用为纯本地运行：资源只随 APK 分发，不再有服务端资源包 / 上传脚本。
  *
  * 用法：
  *   node scripts/build-web.js             # 只做 yml->json 和拷贝
- *   node scripts/build-web.js --zip       # 额外生成 assets/tv-web.zip
  *   node scripts/build-web.js --no-yaml   # 跳过 yml->json（CI 快速构建时可用）
  *
  * 说明：
- *   - 只依赖 web/tv-web 下的 node_modules（js-yaml / archiver）
+ *   - 只依赖 web/tv-web 下的 node_modules（js-yaml）
  *   - 不使用任何写死的本机绝对路径，clone 下来即可直接跑
  */
 
@@ -22,7 +23,6 @@
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
-const { createRequire } = require('module');
 
 const ROOT = path.resolve(__dirname, '..');
 const WEB_DIR = path.join(ROOT, 'web', 'tv-web');
@@ -58,7 +58,6 @@ const EXCLUDE_FILES = new Set([
 const EXCLUDE_EXTS = ['.yml', '.md'];
 
 const args = process.argv.slice(2);
-const wantZip = args.includes('--zip');
 const skipYaml = args.includes('--no-yaml');
 
 function log(msg) {
@@ -109,24 +108,6 @@ function runYamlToJson() {
   execFileSync(process.execPath, [script], { cwd: WEB_DIR, stdio: 'inherit' });
 }
 
-/** 可选：生成 tv-web.zip（保持和上游资源包结构一致，顶层为 dist 目录） */
-function makeZip() {
-  let archiver;
-  try {
-    archiver = createRequire(path.join(WEB_DIR, 'package.json'))('archiver');
-  } catch (e) {
-    log('未安装 archiver，跳过 zip 生成');
-    return;
-  }
-  const zipPath = path.join(path.dirname(ASSETS_TV_WEB), 'tv-web.zip');
-  const output = fs.createWriteStream(zipPath);
-  const archive = archiver('zip', { zlib: { level: 9 } });
-  archive.pipe(output);
-  archive.directory(ASSETS_TV_WEB, 'tv-web');
-  archive.finalize();
-  output.on('close', () => log(`已生成 ${path.relative(ROOT, zipPath)}`));
-}
-
 function main() {
   if (!fs.existsSync(WEB_DIR)) {
     log(`找不到前端目录：${WEB_DIR}`);
@@ -143,13 +124,13 @@ function main() {
   const count = copyWebAssets(WEB_DIR, ASSETS_TV_WEB);
   log(`已拷贝 ${count} 个文件 -> ${path.relative(ROOT, ASSETS_TV_WEB)}`);
 
-  // 产物自检：首页与直播频道数据是硬依赖，缺失说明打包不完整
+  // 产物自检：直播页与频道数据是硬依赖，缺失说明打包不完整
   const mustHave = [
-    'video.html',
-    'js/video/home.js',
+    'live.html',
     'js/cctv/tv.json',
     'js/common.js',
-    'js/myfocus.js',
+    'js/end.js',
+    'js/load_detail_tv.js',
     'css/my.css',
   ];
   const missing = mustHave.filter((f) => !fs.existsSync(path.join(ASSETS_TV_WEB, f)));
@@ -158,9 +139,6 @@ function main() {
     process.exit(1);
   }
 
-  if (wantZip) {
-    makeZip();
-  }
   log('完成 ✅');
 }
 

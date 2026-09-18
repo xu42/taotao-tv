@@ -1,12 +1,9 @@
 package com.xu42.tv.live;
 
-import static com.xu42.tv.live.util.PermissionUtil.REQUEST_EXTERNAL_STORAGE;
-
 import android.app.Activity;
 import android.app.Instrumentation;
 import android.content.Context;
 import android.content.pm.ActivityInfo;
-import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.view.KeyEvent;
 import android.view.View;
@@ -16,7 +13,6 @@ import android.view.Window;
 import android.view.WindowManager;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
-import android.widget.Toast;
 
 import androidx.databinding.ViewDataBinding;
 
@@ -25,7 +21,6 @@ import java.util.Map;
 
 import com.xu42.tv.live.impl.WebViewClientImpl;
 import com.xu42.tv.live.util.LogUtil;
-import com.xu42.tv.live.utils.ToastUtils;
 
 /**
  * Activity 基类：负责创建并配置系统 WebView（android.webkit）。
@@ -103,7 +98,7 @@ public abstract class BaseActivity extends Activity {
         //自适应屏幕
         webSetting.setUseWideViewPort(true);
         webSetting.setLoadWithOverviewMode(true);
-        // 允许 https 页面内加载 http 资源：直播/影视源里有大量 http 流
+        // 允许 https 页面内加载 http 资源：直播源里有大量 http 流
         webSetting.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
         //自动播放
         webSetting.setMediaPlaybackRequiresUserGesture(false);
@@ -125,25 +120,7 @@ public abstract class BaseActivity extends Activity {
     protected abstract Object getJsInterface();
 
     protected void initWebViewClient() {
-        mWebView.setWebViewClient(new WebViewClientImpl(getBaseContext(), mWebView, 0));
-    }
-
-    /* Don't care about the Base UI Logic below ^_^ */
-    @Override
-    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == REQUEST_EXTERNAL_STORAGE) {
-            if (grantResults.length > 0
-                    && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                // 权限被授予，可以进行文件操作
-            } else {
-                // 权限被拒绝，需要进行一些UX处理
-            }
-            LogUtil.i(TAG, "onRequestPermissionsResult: initWebView");
-            if (null != mWebView) {
-                initWebView();
-            }
-        }
+        mWebView.setWebViewClient(new WebViewClientImpl(getBaseContext(), mWebView));
     }
 
     //key event

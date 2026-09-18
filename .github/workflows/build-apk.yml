@@ -88,13 +88,8 @@ jobs:
         id: collect
         run: |
           mkdir -p out
-          # 优先取通用包（不带 ABI 后缀）。即使将来开启 -PabiSplit，也不会误把分包当成主产物。
-          APK="$(find android/app/build/outputs/apk/release -maxdepth 1 -name '*.apk' -type f \
-            ! -name '*-arm64-v8a.apk' ! -name '*-armeabi-v7a.apk' \
-            ! -name '*-x86.apk' ! -name '*-x86_64.apk' | sort | head -n 1)"
-          if [ -z "$APK" ]; then
-            APK="$(find android/app/build/outputs/apk/release -maxdepth 1 -name '*.apk' -type f | sort | head -n 1)"
-          fi
+          # 单一 APK 产出：取 release 目录下的 apk（按时间取最新一个）
+          APK="$(ls -t android/app/build/outputs/apk/release/*.apk 2>/dev/null | head -n 1)"
           if [ -z "$APK" ]; then
             echo "未找到编译产物" >&2
             exit 1

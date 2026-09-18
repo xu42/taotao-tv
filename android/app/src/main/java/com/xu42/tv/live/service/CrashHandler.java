@@ -8,19 +8,14 @@ import android.os.Process;
 
 import java.io.BufferedWriter;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
-import java.io.StringWriter;
 import java.lang.Thread.UncaughtExceptionHandler;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 
 import com.xu42.tv.live.MyApplication;
-import com.xu42.tv.live.util.AppConfig;
-import com.xu42.tv.live.util.FileUtil;
-import com.xu42.tv.live.util.HttpUtil;
 import com.xu42.tv.live.util.JsonUtil;
 import com.xu42.tv.live.util.LogUtil;
 import com.xu42.tv.live.util.Util;
@@ -30,6 +25,8 @@ import com.xu42.tv.live.util.ValueUtil;
  * Create by ChenHao on 2018/6/299:30
  * use : 应用异常处理类
  * 使用方式： 在Application 中初始化  CrashHandler.getInstance().init(this);
+ *
+ * 只把崩溃堆栈写到应用私有目录，方便本地排查；不做任何上报。
  */
 public class CrashHandler implements UncaughtExceptionHandler {
     private static final String TAG = "CrashHandler";
@@ -132,31 +129,8 @@ public class CrashHandler implements UncaughtExceptionHandler {
 
     }
 
-    private String dumpExceptionToStr(Throwable e){
-        //得到当前年月日时分秒
-        long current = System.currentTimeMillis();
-        StringWriter stringWriter = new StringWriter();
-        String time = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date(current));
-        //在定义的Crash文件夹下创建文件
-        PrintWriter pw = new PrintWriter(new BufferedWriter(stringWriter));
-        try{
-            //写入时间
-            pw.println(time);
-            //写入手机信息
-            dumpPhoneInfo(pw);
-            pw.println();//换行
-            e.printStackTrace(pw);
-            pw.close();//关闭输入流
-        } catch (Exception e1) {
-            LogUtil.e(TAG,"dump crash info failed");
-        }finally {
-            pw.close();//关闭输入流
-        }
-        StringBuffer buffer = stringWriter.getBuffer();
-        return buffer.toString();
-    }
     /**
-     * 将异常信息写入SD卡
+     * 将异常信息写入应用私有目录
      *
      * @param e
      */
@@ -237,49 +211,5 @@ public class CrashHandler implements UncaughtExceptionHandler {
             pw.println(Build.CPU_ABI);
         }
 
-    }
-
-    /**
-     * 将错误信息上传至服务器
-     */
-    public static void uploadExceptionToServer(Context context)  {
-        Context app = context.getApplicationContext();
-        File dir = app.getFilesDir();
-        File[] files = dir.listFiles((d, name) -> name != null && name.startsWith(FILE_NAME) && name.endsWith(FILE_NAME_SUFFIX));
-        if (files == null || files.length == 0) {
-            return;
-        }
-
-        new Thread(() -> {
-            for (File f : files) {
-                String errLog = null;
-                try {
-                    errLog = FileUtil.getStringFromInputStream(new FileInputStream(f));
-                } catch (Exception ignored) {
-                    errLog = null;
-                }
-                if (errLog == null || errLog.isEmpty()) {
-                    return;
-                }
-
-                try {
-                    HttpUtil.postJson(AppConfig.CRASH_URL, null, errLog);
-                    LogUtil.i("POST", AppConfig.CRASH_URL);
-                    // 成功后删除该文件
-                    //noinspection ResultOfMethodCallIgnored
-                    f.delete();
-                } catch (Exception uploadErr) {
-                    LogUtil.e("CrashUpload", "upload failed: " + uploadErr.getMessage());
-                    // 失败不删除，等待下次重试
-                }
-            }
-
-            // 目录中若已无 crash 文件，置为已读
-            File[] left = dir.listFiles((d, name) -> name != null && name.startsWith(FILE_NAME) && name.endsWith(FILE_NAME_SUFFIX));
-            if (left == null || left.length == 0) {
-                ValueUtil.putString(app, "errorLogRead", "1");
-                ValueUtil.putString(app, "errorLog", "");
-            }
-        }).start();
     }
 }

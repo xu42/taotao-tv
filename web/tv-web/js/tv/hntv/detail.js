@@ -8,10 +8,7 @@
     document.querySelectorAll('video').forEach(v => v.pause());
 
     _tvFunc.waitForVideoElement().then(video => {
-        if (video == null) {
-           // _apiX.msg("tobackup", "{}");
-        }
-        else {
+        if (video != null) {
             document.querySelectorAll('video').forEach(v => v.pause());
 
             //tag = decodeURIComponent(_tvLoadRes.getCookie("libreTag"));
@@ -101,9 +98,6 @@
 
                         _tvFunc.fixedW("body");
                         _tvFunc.fullscreenWW("video");
-                    }
-                    else {
-                        _apiX.msg("tobackup", "{}");
                     }
                 });
             }, 1000);

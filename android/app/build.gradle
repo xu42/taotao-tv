@@ -46,13 +46,6 @@ def buildVersionCode = project.findProperty('versionCode')
         ? project.property('versionCode').toString().toInteger()
         : resolveBuildTime.format('yyMMddHH', tz).toInteger()
 
-// 按 CPU 架构拆包（可选）：默认关闭。
-// 本工程没有任何 .so（纯 Java + 内置网页），拆出来的包内容完全一样，
-// 所以默认只产出一个通用包；将来引入原生库后执行
-//   ./gradlew assembleRelease -PabiSplit
-// 即可同时得到 armeabi-v7a / arm64-v8a / x86 / x86_64 分包 + 通用包。
-def enableAbiSplit = project.hasProperty('abiSplit')
-
 android {
    /* flavorDimensions= ["env"]
     productFlavors {
@@ -82,19 +75,9 @@ android {
         dataBinding = true
         viewBinding = true
     }
-    // 按 CPU 架构拆包（-PabiSplit 时生效；详见文件顶部说明）
-    // 两个坑（AGP 8.12 实测）：
-    //  1) 这里不能调用 reset()——AGP 内部 isAbiEnabled() = !isReset && enable，
-    //     只要出现过一次 reset() 拆包就被永久关掉，enable 读到 true 也没用。
-    //  2) splits.abi.include(...) 已经是空实现（写了不报错、但完全不生效），
-    //     AGP 会按支持的 8 个 ABI 全量出包，所以要靠 exclude 把用不到的摘掉。
-    splits {
-        abi {
-            enable enableAbiSplit
-            exclude 'armeabi', 'mips', 'mips64', 'riscv64'
-            universalApk true
-        }
-    }
+    // 单一 APK 产出：不做 ABI 拆分。
+    // 本工程是纯 Java + 内置网页，没有任何 .so，拆包只会得到内容相同的多个副本，
+    // 所以固定只产出一个通用包；将来若引入原生库再考虑按 abiFilters 拆分。
     defaultConfig {
         applicationId "com.xu42.tv.live"
         minSdk 16
@@ -155,29 +138,11 @@ android {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+    // 产物改名：taotao-tv-<编译时间>.apk
     android.applicationVariants.all {
         variant ->
             variant.outputs.all {
-                variantOutput ->
-                    // 拆包时给 APK 文件名加上 CPU 架构后缀（通用包不加）。
-                    // 坑：闭包里不能直接写 output.getFilter("ABI")——那个标识符并不存在，
-                    // 会抛 MissingPropertyException，一旦被 catch 吞掉，所有分包就会重名互相覆盖，
-                    // 最终只剩一个文件（甚至写出损坏的 zip）。必须用显式的闭包参数。
-                    def abiName = ""
-                    try {
-                        def abi = variantOutput.getFilter("ABI")
-                        if (abi != null) {
-                            abiName = abi
-                        } else {
-                            def abiFilter = variantOutput.filters.find { it.filterType == "ABI" }
-                            if (abiFilter != null) {
-                                abiName = abiFilter.identifier
-                            }
-                        }
-                    } catch (Throwable ignore) {
-                    }
-                    def abiSuffix = abiName.isEmpty() ? "" : "-${abiName}"
-                    outputFileName = "taotao-tv-${variant.versionName}${abiSuffix}.apk"
+                outputFileName = "taotao-tv-${variant.versionName}.apk"
             }
     }
     lint {
@@ -190,13 +155,11 @@ android {
 
 dependencies {
     implementation fileTree(dir: 'libs', include: ['*.aar', '*.jar'], exclude: [])
-    implementation 'com.qiniu:happy-dns:2.0.1'
     implementation 'com.google.code.gson:gson:2.8.9'
     implementation "com.squareup.okhttp3:okhttp:$okhttp_version"
     implementation "androidx.room:room-runtime:$room_version"
     implementation 'androidx.recyclerview:recyclerview:1.1.0'
     annotationProcessor "androidx.room:room-compiler:$room_version"
     implementation 'androidx.multidex:multidex:2.0.1'
-    implementation 'org.nanohttpd:nanohttpd:2.3.1'
     testImplementation libs.junit
 }

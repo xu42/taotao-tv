@@ -281,17 +281,6 @@ video::-moz-media-controls {display: none !important;}`;
             })
         }
     },
-    currentXj(item){
-        //title,site,vodId,url
-        _layer.notify("当前"+item.title);
-        console.log("currentXj "+item.vodId+"  "+item.site);
-        //记录当前
-        if(null!=item.vodId&&""!==item.site){
-            let remark= item.title;
-            _apiX.msg("history.update",
-                {site:item.site,vodId:item.vodId,url:item.url,name:item.name,remark:remark});
-        }
-    },
     hzLevel(name,type){
        if(type===1){
          if(name.includes("4K")){
@@ -457,9 +446,7 @@ video::-moz-media-controls {display: none !important;}`;
                         const stallDetector = new VideoStallDetector(video);
                         stallDetector.onStall = (reason) => {
                             if (reason.toLowerCase() != 'buffering' && reason.toLowerCase() != 'readystate') {
-                                _apiX.toast('卡顿原因：' + reason + "。系统重新加载！");
-                                _apiX.msg("tobackup", "{}");
-                            } else {//_apiX.toast('卡顿原因：' + reason);
+                                _apiX.toast('卡顿原因：' + reason + "。");
                             }
                         };
 

@@ -26,7 +26,6 @@
 # okhttp / okio 的可选依赖缺失时的告警
 -dontwarn okhttp3.**
 -dontwarn okio.**
--dontwarn com.qiniu.**
 -dontwarn org.conscrypt.**
 -dontwarn org.bouncycastle.**
 -dontwarn org.openjsse.**
