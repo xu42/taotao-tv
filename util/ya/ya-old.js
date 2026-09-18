@@ -136,18 +136,18 @@ let yaOld={
         }
 }
 //D:\work\utao\utao\android\x5\app\src\main
-//let toAppRes="D:/work/utao/utao/android/x5/app/src/main/assets";
+//let toAppRes="D:/work/utao/utao/android/app/src/main/assets";
 yaOld.yamlToJson(basePath);
 yaOld.rootPath(basePath,toPath);
 //let tvWeb="tv-web";
- toPathBase="D:/work/utao/utao/android/x5/app/src/main/assets";
- //D:/work/utao/utao/android/x5/app/src/main/assets D:/work/web/gen
+ toPathBase="D:/work/utao/utao/android/app/src/main/assets";
+ //D:/work/utao/utao/android/app/src/main/assets D:/work/web/gen
  toPath=toPathBase+"/tv-web";
 yaOld.rootPath(basePath,toPath);
 setTimeout(function (){
         let tvWeb="tv-web";
         let toPathBase="D:/work/web/gen";
-        //let toAppRes="D:/work/utao/utao/android/x5/app/src/main/assets";
+        //let toAppRes="D:/work/utao/utao/android/app/src/main/assets";
         function  zip(pathBase,folder){
                 // 第二步，创建可写流来写入数据
                 const output = fs.createWriteStream(pathBase + "/"+folder+".zip");// 将压缩包保存到当前项目的目录下，并且压缩包名为test.zip

@@ -4,7 +4,7 @@
  *
  * 作用：
  *   1) 执行 web/tv-web/node.js，把 yml 源数据转换成 json（tv.json / update.json / data/*.json）
- *   2) 把 web/tv-web 下的静态资源拷贝到 android/x5/app/src/main/assets/tv-web
+ *   2) 把 web/tv-web 下的静态资源拷贝到 android/app/src/main/assets/tv-web
  *      —— 这一步是安卓端能加载到页面和直播频道数据的前提
  *
  * 用法：
@@ -29,7 +29,6 @@ const WEB_DIR = path.join(ROOT, 'web', 'tv-web');
 const ASSETS_TV_WEB = path.join(
   ROOT,
   'android',
-  'x5',
   'app',
   'src',
   'main',

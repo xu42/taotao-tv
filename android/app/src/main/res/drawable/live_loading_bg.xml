@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 频道加载中遮罩：不透明，盖住加载期间露出的原始网页 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <gradient
+        android:angle="315"
+        android:centerColor="#161D28"
+        android:endColor="#0A0C10"
+        android:startColor="#101521"
+        android:type="linear" />
+</shape>

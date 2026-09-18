@@ -215,9 +215,9 @@ data:
       - name: 昆明教育
         url: https://kmjy.kmetv.com/application/tenma01ds_tvradio/view/web/#/
       - name: 郑州教育
-        url: https://tv.utao.tv/tv-web/live.html?url=https://livezzutv.chinamcache.com/live/zb02.m3u8
+        url: https://tv.xu42.com/tv-web/live.html?url=https://livezzutv.chinamcache.com/live/zb02.m3u8
       - name: 平顶山教育
-        url: https://tv.utao.tv/tv-web/live.html?url=http://219.150.204.175:81/hls/live1.m3u8
+        url: https://tv.xu42.com/tv-web/live.html?url=http://219.150.204.175:81/hls/live1.m3u8
   #广东
   - tag: gdtv
     name: 广东
@@ -882,13 +882,13 @@ data:
       - name: 亳州农村
         url: https://www.ahbztv.com/televisi0n.html?ujs=JCQoJyNjaGFubmVsIC5zd2lwZXItc2xpZGUnKS5maWx0ZXIoZnVuY3Rpb24oKSB7cmV0dXJuICQkKHRoaXMpLnRleHQoKS50cmltKCkgPT09ICflhpzmnZHpopHpgZMnO30pLmNsaWNrKCk=
       - name: 淮北新闻综合
-        url: https://tv.utao.tv/tv-web/live.html?url=https://vms-x.hbnews.net/video/xwzh/index.m3u8
+        url: https://tv.xu42.com/tv-web/live.html?url=https://vms-x.hbnews.net/video/xwzh/index.m3u8
       - name: 淮北经济生活
-        url: https://tv.utao.tv/tv-web/live.html?url=https://vms-x.hbnews.net/video/JJSH/index.m3u8
+        url: https://tv.xu42.com/tv-web/live.html?url=https://vms-x.hbnews.net/video/JJSH/index.m3u8
       - name: 宿州新闻综合
-        url: https://tv.utao.tv/tv-web/live.html?url=https://live.ahsz.tv/video/s10001-szzh/index.m3u8
+        url: https://tv.xu42.com/tv-web/live.html?url=https://live.ahsz.tv/video/s10001-szzh/index.m3u8
       - name: 宿州科教生活
-        url: https://tv.utao.tv/tv-web/live.html?url=https://live.ahsz.tv/video/s10001-kxjy/index.m3u8
+        url: https://tv.xu42.com/tv-web/live.html?url=https://live.ahsz.tv/video/s10001-kxjy/index.m3u8
   #江苏
   - tag: jstv
     name: 江苏
@@ -912,15 +912,15 @@ data:
       - name: 江苏国际
         url: https://live.jstv.com/?tag=江苏国际
       - name: 苏州新闻综合
-        url: https://tv.utao.tv/tv-web/live.html?url=https://live-auth.51kandianshi.com/szgd/csztv1.m3u8
+        url: https://tv.xu42.com/tv-web/live.html?url=https://live-auth.51kandianshi.com/szgd/csztv1.m3u8
       - name: 苏州社会经济
-        url: https://tv.utao.tv/tv-web/live.html?url=https://live-auth.51kandianshi.com/szgd/csztv2.m3u8
+        url: https://tv.xu42.com/tv-web/live.html?url=https://live-auth.51kandianshi.com/szgd/csztv2.m3u8
       - name: 苏州电影娱乐
-        url: https://tv.utao.tv/tv-web/live.html?url=https://live-auth.51kandianshi.com/szgd/csztv4.m3u8
+        url: https://tv.xu42.com/tv-web/live.html?url=https://live-auth.51kandianshi.com/szgd/csztv4.m3u8
       - name: 苏州生活资讯
-        url: https://tv.utao.tv/tv-web/live.html?url=https://live-auth.51kandianshi.com/szgd/csztv5.m3u8
+        url: https://tv.xu42.com/tv-web/live.html?url=https://live-auth.51kandianshi.com/szgd/csztv5.m3u8
       - name: 苏州4K
-        url: https://tv.utao.tv/tv-web/live.html?url=https://live-auth.51kandianshi.com/szgd/csztv4k_4k.m3u8
+        url: https://tv.xu42.com/tv-web/live.html?url=https://live-auth.51kandianshi.com/szgd/csztv4k_4k.m3u8
       - name: 南京新闻综合
         url: https://www.nbs.cn/live/?id=109152
       - name: 南京十八·生活
@@ -960,9 +960,9 @@ data:
       - name: 福州新闻综合
         url: https://www.fjtv.net/front-cloudlive-manage-h5/index.html?id=731087090473676800&company_id=468&utaot=1
       - name: 福州生活
-        url: https://tv.utao.tv/tv-web/live.html?url=https://live.zohi.tv/video/s10001-fztv-3/index.m3u8
+        url: https://tv.xu42.com/tv-web/live.html?url=https://live.zohi.tv/video/s10001-fztv-3/index.m3u8
       - name: 福建文体
-        url: https://tv.utao.tv/tv-web/live.html?url=https://live.zohi.tv/video/s10001-fztv-4/index.m3u8
+        url: https://tv.xu42.com/tv-web/live.html?url=https://live.zohi.tv/video/s10001-fztv-4/index.m3u8
       - name: 福建少儿
         url: https://www.fjtv.net/front-cloudlive-manage-h5/index.html?id=665248553475870720&company_id=468&utaot=1
       - name: 泉州新闻综合
@@ -1109,9 +1109,9 @@ data:
       - name: 遂宁文化生活
         url: https://www.snxw.com/tv-web/live.html?url=https://szyplaytv.snxw.com/live/gggy/playlist.m3u8
       - name: 广元综合
-        url: https://utao.tv/tv-web/live.html?url=https://m3u8.channel.dzsm.com/nmip-media/channellive/channel100999/playlist.m3u8
+        url: https://tv.xu42.com/tv-web/live.html?url=https://m3u8.channel.dzsm.com/nmip-media/channellive/channel100999/playlist.m3u8
       - name: 广元文化生活
-        url: https://utao.tv/tv-web/live.html?url=https://m3u8.channel.dzsm.com/nmip-media/channellive/channel101257/playlist.m3u8
+        url: https://tv.xu42.com/tv-web/live.html?url=https://m3u8.channel.dzsm.com/nmip-media/channellive/channel101257/playlist.m3u8
 
       - name: 资阳新闻综合
         url: http://www.zyrb.com.cn/#/bD074b747F?pkey=
@@ -1371,7 +1371,7 @@ data:
       - name: 齐齐哈尔经济·法治
         url: https://www.qqhrnews.cn/p/jingjifazhipindao.html
       - name: 绥化新闻综合
-        url: https://tv.utao.tv/tv-web/live.html?url=https://liveplaysr.dbw.cn/lsdream/amzPoBP/1000/live.m3u8
+        url: https://tv.xu42.com/tv-web/live.html?url=https://liveplaysr.dbw.cn/lsdream/amzPoBP/1000/live.m3u8
   #湖北
   - tag: hbtv
     name: 湖北
@@ -1529,17 +1529,17 @@ data:
         url: http://www.shznews.com/TV.html
 
       - name: 克拉玛依汉语综合
-        url: https://tv.utao.tv/tv-web/live.html?url=https://klmysjtzb.rcsxzx.com/hls/klmy1.m3u8
+        url: https://tv.xu42.com/tv-web/live.html?url=https://klmysjtzb.rcsxzx.com/hls/klmy1.m3u8
       - name: 克拉玛依维语综合
-        url: https://tv.utao.tv/tv-web/live.html?url=https://klmysjtzb.rcsxzx.com/hls/klmy2.m3u8
+        url: https://tv.xu42.com/tv-web/live.html?url=https://klmysjtzb.rcsxzx.com/hls/klmy2.m3u8
       - name: 克拉玛依文化影视
-        url: https://tv.utao.tv/tv-web/live.html?url=https://klmysjtzb.rcsxzx.com/hls/klmy3.m3u8
+        url: https://tv.xu42.com/tv-web/live.html?url=https://klmysjtzb.rcsxzx.com/hls/klmy3.m3u8
       - name: 哈密汉语综合
-        url: https://tv.utao.tv/tv-web/live.html?url=https://tvpull.hmgbtv.com/hmtv/channel9cd66b3d5d258b2b/playlist.m3u8
+        url: https://tv.xu42.com/tv-web/live.html?url=https://tvpull.hmgbtv.com/hmtv/channel9cd66b3d5d258b2b/playlist.m3u8
       - name: 哈密维语综合
-        url: https://tv.utao.tv/tv-web/live.html?url=https://tvpull.hmgbtv.com/hmtv/channel108259412c6a6711/playlist.m3u8
+        url: https://tv.xu42.com/tv-web/live.html?url=https://tvpull.hmgbtv.com/hmtv/channel108259412c6a6711/playlist.m3u8
       - name: 哈密影视文艺
-        url: https://tv.utao.tv/tv-web/live.html?url=https://tvpull.hmgbtv.com/hmtv/channelfb0e5c505477aa44/playlist.m3u8
+        url: https://tv.xu42.com/tv-web/live.html?url=https://tvpull.hmgbtv.com/hmtv/channelfb0e5c505477aa44/playlist.m3u8
 
 #      - name: 巴音郭楞汉语综合
 #        url: https://st-app.xjmty.com/video/videojs/index?site_id=10127&id=24&page=canvas2&live_type=1
@@ -1591,19 +1591,19 @@ data:
       - name: 兰州文旅
         url: https://lanzhoubcnew.zainanjing365.com/share/live/detailTv?resourceId=14&appscheme=gdmm-ailanzhou
       - name: 陇南综合
-        url: https://tv.utao.tv/tv-web/live.html?url=https://play.kankanlive.com/live/1709171819929902.m3u8
+        url: https://tv.xu42.com/tv-web/live.html?url=https://play.kankanlive.com/live/1709171819929902.m3u8
       - name: 陇南公共
-        url: https://tv.utao.tv/tv-web/live.html?url=https://play.kankanlive.com/live/1709171893138901.m3u8
+        url: https://tv.xu42.com/tv-web/live.html?url=https://play.kankanlive.com/live/1709171893138901.m3u8
       - name: 白银综合
-        url: https://tv.utao.tv/tv-web/live.html?url=https://play.kankanlive.com/live/1720408089419110.m3u8
+        url: https://tv.xu42.com/tv-web/live.html?url=https://play.kankanlive.com/live/1720408089419110.m3u8
       - name: 白银文化教育
-        url: https://tv.utao.tv/tv-web/live.html?url=https://play.kankanlive.com/live/1720408280309109.m3u8
+        url: https://tv.xu42.com/tv-web/live.html?url=https://play.kankanlive.com/live/1720408280309109.m3u8
       - name: 定西综合
-        url: https://tv.utao.tv/tv-web/live.html?url=http://play.kankanlive.com/live/1745232061100288.m3u8
+        url: https://tv.xu42.com/tv-web/live.html?url=http://play.kankanlive.com/live/1745232061100288.m3u8
       - name: 定西文旅生活
-        url: https://tv.utao.tv/tv-web/live.html?url=http://play.kankanlive.com/live/1745232082475287.m3u8
+        url: https://tv.xu42.com/tv-web/live.html?url=http://play.kankanlive.com/live/1745232082475287.m3u8
       - name: 平凉新闻综合
-        url: https://tv.utao.tv/tv-web/live.html?url=https://play.kankanlive.com/live/1694661314645984.m3u8
+        url: https://tv.xu42.com/tv-web/live.html?url=https://play.kankanlive.com/live/1694661314645984.m3u8
   #宁夏
   - tag: ningxia
     name: 宁夏
@@ -1684,15 +1684,15 @@ data:
     name: 西藏
     vods:
       - name: 拉萨藏语综合
-        url: https://tv.utao.tv/tv-web/live.html?url=https://tvfile.lasatv.cn/nmip-media/channellive/channel104335/playlist.m3u8
+        url: https://tv.xu42.com/tv-web/live.html?url=https://tvfile.lasatv.cn/nmip-media/channellive/channel104335/playlist.m3u8
       - name: 拉萨综合
-        url: https://tv.utao.tv/tv-web/live.html?url=https://tvfile.lasatv.cn/nmip-media/channellive/channel101894/playlist.m3u8
+        url: https://tv.xu42.com/tv-web/live.html?url=https://tvfile.lasatv.cn/nmip-media/channellive/channel101894/playlist.m3u8
       - name: 拉萨文化旅游
-        url: https://tv.utao.tv/tv-web/live.html?url=https://tvfile.lasatv.cn/nmip-media/channellive/channel103157/playlist.m3u8
+        url: https://tv.xu42.com/tv-web/live.html?url=https://tvfile.lasatv.cn/nmip-media/channellive/channel103157/playlist.m3u8
       - name: 日喀则汉语
-        url: https://tv.utao.tv/tv-web/live.html?url=https://console.rkzrm.cn:20323/4.m3u8
+        url: https://tv.xu42.com/tv-web/live.html?url=https://console.rkzrm.cn:20323/4.m3u8
       - name: 日喀则藏语
-        url: https://tv.utao.tv/tv-web/live.html?url=https://console.rkzrm.cn:20323/8.m3u8
+        url: https://tv.xu42.com/tv-web/live.html?url=https://console.rkzrm.cn:20323/8.m3u8
 
 
   #海南
@@ -1785,9 +1785,9 @@ data:
       - name: 临沧科教
         url: https://mtydazzle.yntv.cn/pages/liveDetails/detail.html/?companyId=lincang&_id=5f51f80ee4b04f16d0288801&isTest=no
       - name: 西双版纳新闻综合
-        url: https://utao.tv/tv-web/live.html?url=https://channellive.xsbnw.cn/default/nmip-media/channellive/channel112526/playlist.m3u8
+        url: https://tv.xu42.com/tv-web/live.html?url=https://channellive.xsbnw.cn/default/nmip-media/channellive/channel112526/playlist.m3u8
       - name: 西双版纳文化旅游
-        url: https://utao.tv/tv-web/live.html?url=https://channellive.xsbnw.cn/default/nmip-media/channellive/channel112694/playlist.m3u8
+        url: https://tv.xu42.com/tv-web/live.html?url=https://channellive.xsbnw.cn/default/nmip-media/channellive/channel112694/playlist.m3u8
       - name: 红河新闻综合
         url: https://www.hh.cn/ynhhzMini/site/tv
 
@@ -1826,15 +1826,15 @@ data:
       - name: 铜川公共
         url: https://www.tcsrm.cn/tvradio/tcggpd.html
       - name: 榆林综合
-        url: https://utao.tv/tv-web/live.html?url=https://49c1f938208318cdf8288bc36b62472a.livehwc4.com/hplayer1.juyun.tv/camera/186023110.m3u8
+        url: https://tv.xu42.com/tv-web/live.html?url=https://49c1f938208318cdf8288bc36b62472a.livehwc4.com/hplayer1.juyun.tv/camera/186023110.m3u8
       - name: 榆林文化旅游
-        url: https://utao.tv/tv-web/live.html?url=https://49c1f938208318cdf8288bc36b62472a.livehwc4.com/hplayer1.juyun.tv/camera/186022194.m3u8
+        url: https://tv.xu42.com/tv-web/live.html?url=https://49c1f938208318cdf8288bc36b62472a.livehwc4.com/hplayer1.juyun.tv/camera/186022194.m3u8
       - name: 商洛综合
-        url: https://utao.tv/tv-web/live.html?url=https://player4.juyun.tv/camera/171844138.m3u8
+        url: https://tv.xu42.com/tv-web/live.html?url=https://player4.juyun.tv/camera/171844138.m3u8
       - name: 延安综合
-        url: https://utao.tv/tv-web/live.html?url=https://srs.yanews.cn/video/YATV-1/index.m3u8
+        url: https://tv.xu42.com/tv-web/live.html?url=https://srs.yanews.cn/video/YATV-1/index.m3u8
       - name: 延安公共
-        url: https://utao.tv/tv-web/live.html?url=https://srs.yanews.cn/video/YATV-2/index.m3u8
+        url: https://tv.xu42.com/tv-web/live.html?url=https://srs.yanews.cn/video/YATV-2/index.m3u8
       - name: 咸阳综合
         url: https://www.sxxynews.com.cn/tvradio/xyzhpd.html
       - name: 咸阳公共

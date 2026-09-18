@@ -51,7 +51,7 @@ const _html={
         console.log("initAppinitApp")
         if (typeof PetiteVue === 'undefined') {
            // _api.message("activity","live");
-            _api.toast("内置浏览器内核过低请返回键升级webview或者开启x5内核浏览器 也可官网utao.tv下载火狐版");
+            _api.toast("设备内置浏览器内核过低，请在系统应用商店升级 Android System WebView 后重试");
             return;
         }
         PetiteVue.createApp({
@@ -64,8 +64,7 @@ const _html={
             tab: "index",
             info:{
               sys:"当前系统",
-              version:"当前版本",
-                x5Ok:true
+              version:"当前版本"
             },
             initData(){
                 _data.initData(this);
@@ -99,9 +98,6 @@ const _html={
             },
             clearCache(){
                 _apiX.msg("clearCache",null);
-            },
-            openX5(){
-                _apiX.msg("openX5",null);
             },
             openOkMenu(){
                 this.info.openOkMenu=!this.info.openOkMenu;
@@ -183,7 +179,6 @@ const _html={
                         return;
                 }
                 if(dataUrl.startsWith("https://www.douyin.com")&& _tvFunc.isApp()){
-                    _apiX.msgStr("activity","douyin");
                     return;
                 }
                 _layer.wait("请耐心等待跳转。。。");

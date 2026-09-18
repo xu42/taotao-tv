@@ -43,7 +43,7 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: gradle-${{ runner.os }}-${{ hashFiles('android/x5/**/*.gradle*', 'android/x5/gradle/wrapper/gradle-wrapper.properties') }}
+          key: gradle-${{ runner.os }}-${{ hashFiles('android/**/*.gradle*', 'android/gradle/wrapper/gradle-wrapper.properties') }}
           restore-keys: |
             gradle-${{ runner.os }}-
 
@@ -64,14 +64,14 @@ jobs:
         run: |
           if [ -n "$KEYSTORE_BASE64" ]; then
             echo "检测到签名密钥，使用正式签名编译 release APK"
-            mkdir -p android/x5/keystore
-            printf '%s' "$KEYSTORE_BASE64" | base64 -d > android/x5/keystore/x5.jks
+            mkdir -p android/keystore
+            printf '%s' "$KEYSTORE_BASE64" | base64 -d > android/keystore/release.jks
             {
-              echo "RELEASE_STORE_FILE=../keystore/x5.jks"
+              echo "RELEASE_STORE_FILE=../keystore/release.jks"
               echo "RELEASE_STORE_PASSWORD=$KS_PASS"
               echo "RELEASE_KEY_ALIAS=$KEY_ALIAS"
               echo "RELEASE_KEY_PASSWORD=$KEY_PASS"
-            } > android/x5/local.properties
+            } > android/local.properties
             echo "signed=true" >> "$GITHUB_OUTPUT"
           else
             echo "未配置签名密钥（RELEASE_KEYSTORE_BASE64），将自动回退 debug 签名，产物同样可直接安装"
@@ -79,7 +79,7 @@ jobs:
           fi
 
       - name: 编译 Release APK
-        working-directory: android/x5
+        working-directory: android
         run: |
           chmod +x ./gradlew
           ./gradlew --no-daemon assembleRelease
@@ -88,7 +88,7 @@ jobs:
         id: collect
         run: |
           mkdir -p out
-          APK="$(find android/x5/app/build/outputs/apk/release -name '*.apk' -type f | head -n 1)"
+          APK="$(find android/app/build/outputs/apk/release -name '*.apk' -type f | head -n 1)"
           if [ -z "$APK" ]; then
             echo "未找到编译产物" >&2
             exit 1
@@ -110,7 +110,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: out/utao-*.apk
+          files: out/taotao-tv-*.apk
           generate_release_notes: true
           draft: false
           fail_on_unmatched_files: true

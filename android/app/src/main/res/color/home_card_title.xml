@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 首页卡片主标题颜色：未选中（浅底）用深色字，选中（深底）用白色字 -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:color="#FFFFFF" android:state_focused="true" />
+    <item android:color="#2A3140" />
+</selector>

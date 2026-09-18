@@ -87,8 +87,8 @@ ya.yamlToJson(basePath);
 let toPathBase="D:/work/web/gen";
 let toPath=toPathBase+"/tv-web";
 ya.rootPath(basePath,toPath);
-toPathBase="D:/work/utao/utao/android/x5/app/src/main/assets";
-//D:/work/utao/utao/android/x5/app/src/main/assets D:/work/web/gen
+toPathBase="D:/work/utao/utao/android/app/src/main/assets";
+//D:/work/utao/utao/android/app/src/main/assets D:/work/web/gen
 toPath=toPathBase+"/tv-web";
 ya.rootPath(basePath,toPath);
 

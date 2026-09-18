@@ -103,8 +103,8 @@ let toPathBase="/Users/vonchange/work/web/gen";
 ya.mkdir(toPathBase);
 let toPath=toPathBase+"/tv-web";
 ya.rootPath(basePath,toPath);
-toPathBase="/Users/vonchange/work/my/utao/android/x5/app/src/main/assets";
-// /Users/vonchange/work/my/utao/android/x5/app/src/main/assets /Users/vonchange/work/web/gen
+toPathBase="/Users/vonchange/work/my/utao/android/app/src/main/assets";
+// /Users/vonchange/work/my/utao/android/app/src/main/assets /Users/vonchange/work/web/gen
 // 确保目标基础目录存在
 ya.mkdir(toPathBase);
 toPath=toPathBase+"/tv-web";

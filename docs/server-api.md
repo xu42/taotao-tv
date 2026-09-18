@@ -4,7 +4,7 @@
 
 - **服务端基地址**：`https://api.tv.xu42.com`
 - **内置网页伪源**：`https://tv.xu42.com/tv-web/`（**不落到服务器**，见文末「伪源说明」）
-- **客户端常量集中配置**：`android/x5/app/src/main/java/tv/utao/x5/util/AppConfig.java`
+- **客户端常量集中配置**：`android/app/src/main/java/com/xu42/tv/live/util/AppConfig.java`
 
 > 说明：接口一共有 3 个「动态接口」+ 若干「静态文件」，全部由同一个域名提供。除 `/channel/proxy` 外都是 GET。
 
@@ -19,9 +19,8 @@
 | GET | `/channel/proxy` | 频道地址代理解析（目前用于四川广电等） | `web/tv-web/js/tv/sctv/sctv.js` |
 | GET | `/res/tv-web.zip` | 内置网页资源更新包（静态文件，zip） | `service/UpdateService.java` |
 | GET | `/app/download` | APK 下载地址（静态文件） | `StartActivity.java` / `BaseWebViewActivity.java` |
-| GET | `/x5/*.tbs` | X5 内核下载（可选，也可继续用腾讯官方地址） | `service/UpdateX5Service.java` |
 
-客户端会在启动时请求 `/app/config`，并根据返回内容决定：是否提示升级 APK、是否下载新的网页资源包、是否下载 X5 内核。
+客户端会在启动时请求 `/app/config`，并根据返回内容决定：是否提示升级 APK、是否下载新的网页资源包。
 
 ---
 
@@ -61,10 +60,6 @@ GET /app/config?num={32|64}&api={androidSdkInt}&ver={versionCode}
     "desc": "本次更新内容……",
     "force": false                 // true 为强制更新
   },
-  "x5Url": {                       // 可选：X5 内核下载地址；缺省则跳过内核下载
-    "32": ["https://.../armeabi.tbs"],
-    "64": ["https://.../arm64-v8a.tbs"]
-  },
   "datas": [                       // 可选：历史遗留字段，当前版本未使用
     { "code": "video", "url": "video.json", "v": "2024/11/19/001" }
   ]
@@ -73,10 +68,9 @@ GET /app/config?num={32|64}&api={androidSdkInt}&ver={versionCode}
 
 字段说明与约束：
 
-- `res`、`apk`、`x5Url`、`datas` **全部可选**。最小可用响应就是 `{"res":{"version":1,"url":"...","update":false}}`；甚至 `{}` 也能让应用正常进入首页（只是没有热更新）。
+- `res`、`apk`、`datas` **全部可选**。最小可用响应就是 `{"res":{"version":1,"url":"...","update":false}}`；甚至 `{}` 也能让应用正常进入首页（只是没有热更新）。
 - `apk` 若存在，`version` / `url` 必须齐全；`version > 当前 versionCode` 且 `force=false` 时用户可选择「稍后」。
 - `res` 的判定逻辑（`UpdateService.checkOnlineVersion`）：只有当 `res.update == true` **且** `res.version >` 内置 `update.json` 的 `res.version` 时，才会去下载 `res.url`。
-- `x5Url` 的结构是「位数 -> 地址数组」；64 位取 `["64"][0]`，32 位在 Android 5.0+ 取 `["32"][0]`，更低版本取 `["32"][1]`。数组不可为空。
 
 ### 2.3 缓存
 
@@ -180,7 +174,7 @@ Referer: https://api.tv.xu42.com     （由客户端 header `tv-ref` 映射而�
 - 仓库已提供打包脚本，可产出符合要求的 zip：
 
   ```bash
-  node scripts/build-web.js --zip      # 生成 android/x5/app/src/main/assets/tv-web.zip
+  node scripts/build-web.js --zip      # 生成 android/app/src/main/assets/tv-web.zip
   ```
 
 ### 5.2 版本推进
@@ -203,15 +197,9 @@ Referer: https://api.tv.xu42.com     （由客户端 header `tv-ref` 映射而�
 
 ---
 
-## 7. X5 内核 /x5/*.tbs（可选）
+## 7. 部署参考
 
-`x5Url` 指向 `.tbs` 内核包。若不想自行托管，可以继续使用腾讯官方地址（仓库内置 `update.json` 里已填好官方链接），或干脆在 `/app/config` 里不返回 `x5Url`，客户端会跳过内核下载、直接使用系统 WebView。
-
----
-
-## 8. 部署参考
-
-### 8.1 目录结构建议
+### 7.1 目录结构建议
 
 ```
 /var/www/tv-api/
@@ -221,14 +209,11 @@ Referer: https://api.tv.xu42.com     （由客户端 header `tv-ref` 映射而�
 │   └── download        # 静态：最新 APK
 ├── channel/
 │   └── proxy           # 动态接口（频道代理解析）
-├── res/
-│   └── tv-web.zip      # 静态：网页资源包
-└── x5/
-    ├── armeabi.tbs
-    └── arm64-v8a.tbs
+└── res/
+    └── tv-web.zip      # 静态：网页资源包
 ```
 
-### 8.2 参考 Nginx 配置
+### 7.2 参考 Nginx 配置
 
 ```nginx
 server {
@@ -281,7 +266,7 @@ server {
 
 > 必须在 `api.tv.xu42.com` 上启用 **HTTPS**：客户端只接受同域名的 https，且 Nginx 需要放行 `Referer` 头（`/channel/proxy` 依赖它）。
 
-### 8.3 最小后端伪代码（Node/Express 示例）
+### 7.3 最小后端伪代码（Node/Express 示例）
 
 ```js
 const express = require('express');
@@ -303,7 +288,6 @@ app.get('/app/config', (req, res) => {
       desc: '修复若干问题',
       force: false,
     },
-    // 不需要 X5 内核更新时可以不返回 x5Url
   });
 });
 
@@ -320,7 +304,7 @@ app.get('/channel/proxy', async (req, res) => {
 app.listen(8080, '127.0.0.1');
 ```
 
-### 8.4 自测（curl）
+### 7.4 自测（curl）
 
 ```bash
 # 配置接口：必须是 JSON 对象，且以 { 开头
@@ -339,14 +323,13 @@ curl -s -o /tmp/tv-web.zip 'https://api.tv.xu42.com/res/tv-web.zip' && unzip -l 
 
 ---
 
-## 9. 客户端对接点一览
+## 8. 客户端对接点一览
 
 | 位置 | 作用 |
 | --- | --- |
 | `util/AppConfig.java` | 所有地址的唯一出处（`API_BASE` / `CONFIG_URL` / `CRASH_URL` / `CHANNEL_PROXY_URL`） |
 | `api/ConfigApi.java` | 请求 `/app/config`，24h 缓存 |
 | `service/UpdateService.java` | 读取配置、下载并解压 `/res/tv-web.zip` |
-| `service/UpdateX5Service.java` | 读取 `x5Url` 下载内核 |
 | `service/CrashHandler.java` | POST `/app/crash` |
 | `StartActivity.java` / `BaseWebViewActivity.java` | 读取 `apk` 字段，处理应用升级 |
 | `web/tv-web/js/tv/sctv/sctv.js` | 调用 `/channel/proxy`（基址来自注入的 `_tvApiBase`） |
@@ -355,7 +338,7 @@ curl -s -o /tmp/tv-web.zip 'https://api.tv.xu42.com/res/tv-web.zip' && unzip -l 
 
 ---
 
-## 10. 附录：伪源说明
+## 9. 附录：伪源说明
 
 `https://tv.xu42.com/tv-web/` 只是应用内部使用的「伪源」：
 

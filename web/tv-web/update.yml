@@ -8,11 +8,6 @@ apk:
   url: https://api.tv.xu42.com/app/download
   force: false
   desc: ''
-x5Url:
-  64:
-    - https://tbsall.imtt.qq.com/mtt/release/component/tbs_core_046285_20240613152541_nolog_fs_obfs_arm64-v8a_release.tbs
-  32:
-    - https://tbs.imtt.qq.com/others/release/x5/tbs_core_046238_20230210164344_nolog_fs_obfs_armeabi_release.tbs
 data:
   - code: video
     url: video.json
