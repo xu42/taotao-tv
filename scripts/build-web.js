@@ -49,16 +49,13 @@ const EXCLUDE_DIRS = new Set([
 ]);
 const EXCLUDE_FILES = new Set([
   'node.js',
-  'ya.js',
-  'ya-old.js',
-  'huo.js',
-  'hun.js',
   'upload.sh',
-  'ext-run.sh',
   '.gitignore',
   'package.json',
   'package-lock.json',
 ]);
+// 运行时只读 json：yml 是「源数据」，打进包里纯属浪费体积
+const EXCLUDE_EXTS = ['.yml', '.md'];
 
 const args = process.argv.slice(2);
 const wantZip = args.includes('--zip');
@@ -90,7 +87,7 @@ function copyWebAssets(srcDir, destDir) {
       continue;
     }
     if (EXCLUDE_FILES.has(name)) continue;
-    if (name.endsWith('.md')) continue;
+    if (EXCLUDE_EXTS.some((ext) => name.endsWith(ext))) continue;
 
     fs.copyFileSync(src, dest);
     fileCount += 1;

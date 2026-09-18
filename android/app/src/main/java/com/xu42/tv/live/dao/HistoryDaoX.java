@@ -55,6 +55,13 @@ public class HistoryDaoX {
         }
         return vod;
     }
+
+    /** 上次播放的地址，用来还原当时用的是这个频道的哪一路源 */
+    public static String currentChannelUrl(Context context){
+        HistoryDao historyDao = AppDatabase.getInstance(context).historyDao();
+        History history =   historyDao.queryOneBySite("tv");
+        return null==history ? null : history.url;
+    }
     public static void updateChannel(Context context, String url){
         HistoryDao historyDao = AppDatabase.getInstance(context).historyDao();
         History history =   historyDao.queryOneBySite("tv");

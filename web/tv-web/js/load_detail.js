@@ -19,9 +19,6 @@ if(typeof _tvload == "undefined"){
         if(url.startsWith("https://tv.cctv.com/")){
             return "cctvideo";
         }
-        if(url.startsWith("https://www.bestv.com.cn/web/play/")){
-            return "bestv";
-        }
         if(url.startsWith("https://www.ixigua.com/")){
             return "xigua";
         }

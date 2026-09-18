@@ -7,6 +7,7 @@ import android.os.Build;
 import android.webkit.RenderProcessGoneDetail;
 import android.webkit.SslErrorHandler;
 import android.webkit.ValueCallback;
+import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebView;
@@ -45,6 +46,27 @@ public class WebViewClientImpl extends WebViewClient {
     private static String rootUrl = null;
     private static String currentUrl = null;
     private int type;
+
+    /**
+     * 主文档加载失败的回调。直播页用它来触发「自动换源」：
+     * 某个台的默认源（央视网）打不开时，自动切到下一个源。
+     */
+    public interface LoadStateListener {
+        void onMainFrameError(String url, String reason);
+    }
+
+    private LoadStateListener loadStateListener;
+
+    public void setLoadStateListener(LoadStateListener listener) {
+        this.loadStateListener = listener;
+    }
+
+    private void notifyMainFrameError(String url, String reason) {
+        LogUtil.e(TAG, "mainFrameError: " + reason + ", url: " + url);
+        if (null != loadStateListener) {
+            loadStateListener.onMainFrameError(url, reason);
+        }
+    }
 
     public WebViewClientImpl(Context context, WebView mWebView, int type) {
         this.context = context;
@@ -126,6 +148,30 @@ public class WebViewClientImpl extends WebViewClient {
         LogUtil.e(TAG, "onReceivedError: " + errorCode
                 + ", description: " + description
                 + ", url: " + failingUrl);
+        // 低版本系统只上报主文档错误
+        notifyMainFrameError(failingUrl, description);
+    }
+
+    @RequiresApi(Build.VERSION_CODES.M)
+    @Override
+    public void onReceivedError(WebView webView, WebResourceRequest request, WebResourceError error) {
+        // 只有主文档（当前频道页面）失败才需要换源，子资源失败忽略
+        if (null != request && request.isForMainFrame()) {
+            CharSequence desc = (null == error) ? null : error.getDescription();
+            notifyMainFrameError(request.getUrl().toString(),
+                    null == desc ? "页面加载失败" : desc.toString());
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.M)
+    @Override
+    public void onReceivedHttpError(WebView webView, WebResourceRequest request,
+                                    WebResourceResponse errorResponse) {
+        if (null != request && request.isForMainFrame() && null != errorResponse
+                && errorResponse.getStatusCode() >= 400) {
+            notifyMainFrameError(request.getUrl().toString(),
+                    "HTTP " + errorResponse.getStatusCode());
+        }
     }
 
     @Override

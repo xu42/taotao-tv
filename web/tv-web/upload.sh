@@ -1,12 +1,12 @@
 #!/bin/bash
 
 # 上传 update.json 到服务器
-# 使用环境变量：TV_UPLOAD_HOST 和 TV_UPLOAD_USER
+# 使用环境变量：TV_UPLOAD_HOST / TV_UPLOAD_USER / TV_UPLOAD_PATH（可选）
 
 # 从环境变量读取配置
 SERVER_HOST="${TV_UPLOAD_HOST}"
 SERVER_USER="${TV_UPLOAD_USER}"
-REMOTE_PATH="/home/utao/config/update.json"
+REMOTE_PATH="${TV_UPLOAD_PATH:-update.json}"
 LOCAL_FILE="$(dirname "$0")/update.json"
 
 # 检查环境变量是否设置

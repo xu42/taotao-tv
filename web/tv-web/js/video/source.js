@@ -82,41 +82,6 @@ const VG_SOURCES = [
         }
     },
     {
-        key: "bestv",
-        name: "百视通",
-        cats: { "电影": "电影", "电视剧": "电视剧", "少儿": "少儿" },
-        list: function (cat, page, done) {
-            // 百视通只放出免费内容：badge=1 表示限免
-            const url = "https://www.bestv.com.cn/api/videos/q?page=" + page +
-                "&size=36&badge=1&tags[]=" + encodeURIComponent(this.cats[cat]);
-            _apiX.getJson(url,
-                { "User-Agent": _apiX.userAgent(false), "tv-ref": "https://www.bestv.com.cn/" },
-                function (text) {
-                    let vods = [];
-                    try {
-                        const data = JSON.parse(text);
-                        (data.Data && data.Data.Items || []).forEach(function (item) {
-                            if (item.badge !== 0) {
-                                return;
-                            }
-                            vods.push({
-                                id: item.Vid,
-                                name: item.Title,
-                                pic: _tvFunc.image(item.Vimage),
-                                url: "https://www.bestv.com.cn/web/play/" + item.Vid,
-                                remark: item.Pubdate || "",
-                                site: "bestv"
-                            });
-                        });
-                    } catch (e) {
-                        console.error("bestv parse error", e);
-                    }
-                    done(vods);
-                },
-                function () { done(null); });
-        }
-    },
-    {
         key: "youku",
         name: "优酷",
         cats: {

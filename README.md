@@ -12,8 +12,32 @@
 
 | 入口 | 说明 |
 | --- | --- |
-| **直播** | 央视、卫视与地方台，遥控器上下左右快速切台 |
+| **直播** | 央视、卫视与地方台，二级分类切台，一个台多个源 |
 | **影视** | 聚合多家片源，分类浏览、点选即播 |
+
+### 遥控器操作
+
+**直播 · 播放中**
+
+| 按键 | 作用 |
+| --- | --- |
+| 上 / 下 | 上一个 / 下一个频道（在当前分类内循环） |
+| 左 / 右 | 切换这个台的下一个 / 上一个**播放源** |
+| OK / 设置 | 打开切台菜单 |
+| 数字键 | 跳到「收藏」里的第 N 个频道 |
+| 返回 | 退出确认 |
+
+**直播 · 切台菜单**（二级分类）
+
+| 按键 | 作用 |
+| --- | --- |
+| 上 / 下 | 在本栏内移动（左栏选分类，右栏选频道） |
+| 左 / 右 | 在「分类栏」与「频道栏」之间移动 |
+| OK | 播放选中的频道并收起菜单 |
+| 设置 | 收藏 / 取消收藏选中的频道 |
+| 返回 | 收起菜单 |
+
+**影视**：左右切分类，上下选影片，OK 播放。
 
 ---
 
@@ -22,9 +46,14 @@
 1. **首页重做** — 由原来的多功能首页收敛为「直播 / 影视」两个大卡片；未选中浅色、选中深色描边，带轻微缩放动效，遥控器操作不再跳闪。
 2. **彻底移除第三方浏览器内核** — 不再下载、不再打包任何内核文件，统一使用设备自带的系统 WebView。因此启动更快、安装包更小、也不需要额外的内核权限与后台服务。
 3. **移除影视模块中的抖音入口** — 该入口原本依赖第三方内核能力，已整体删除。
-4. **直播切台加载体验** — 切换频道时先显示跳动圆点遮罩，等真实画面就绪后再淡出，不再露出未渲染完成的网页。
-5. **空分类导航修复** — 影视模块中某个片源没有资源时，遥控器向下键可以正确跳到下一个有内容的分区，不再卡住。
-6. **应用内不再包含推广与版权声明内容**；仓库 `LICENSE`（Apache 2.0）保持原样。
+4. **直播切台菜单重做成二级分类** — 左栏是分类（收藏 / 央视 / 卫视 / 各省），右栏是该分类下的频道；不再需要在列表里挑「播放源」。
+5. **一个台可以有多个源** — 同一个频道的多路源被合并成一条记录，默认优先央视网；某一路播不出来时自动切到下一路，也可以播放中按左右键手动切换。
+6. **直播切台加载体验** — 切换频道时先显示跳动圆点遮罩，等真实画面就绪后再淡出，不再露出未渲染完成的网页。
+7. **空分类导航修复** — 影视模块中某个片源没有资源时，遥控器向下键可以正确跳到下一个有内容的分区，不再卡住。
+8. **移除百视通片源** — 该源长期没有可用内容，已连同其页面与适配代码一并删除。
+9. **清理上游遗留文件** — 删除开发辅助目录与一批已不可达的旧页面 / 脚本，内置网页资源从 2.6 MB 降到 1.5 MB。
+10. **版本号按编译时间生成** — 不再手工维护；release 包开启 R8 与资源压缩，安装包明显变小。
+11. **应用内不再包含推广与版权声明内容**；仓库 `LICENSE`（Apache 2.0）保持原样。
 
 ---
 
@@ -40,8 +69,7 @@
 │   └── README.md             # 客户端详细说明
 ├── web/tv-web/               # 内置网页源码（直播与影视的页面逻辑）
 ├── scripts/build-web.js      # 生成 assets 资源（也支持 --zip 打包热更新包）
-├── docs/server-api.md        # 自建服务端接口文档
-└── util/                     # 辅助脚本
+└── docs/server-api.md        # 自建服务端接口文档
 ```
 
 ---
@@ -63,15 +91,19 @@ node scripts/build-web.js
 # 2. 指定 Android SDK 路径
 echo "sdk.dir=$HOME/Library/Android/sdk" > android/local.properties
 
-# 3. 编译
+# 3. 编译（单个通用包）
 cd android
 ./gradlew assembleRelease
 ```
 
 产物：`android/app/build/outputs/apk/release/taotao-tv-<versionName>.apk`
 
-> 未配置签名密钥时会自动回退到 debug 签名，产物依然可以直接安装，便于本地与 CI 使用。
-> 配置正式签名只需在 `android/local.properties` 写入 `RELEASE_STORE_FILE` / `RELEASE_STORE_PASSWORD` / `RELEASE_KEY_ALIAS` / `RELEASE_KEY_PASSWORD`。
+- `versionName` 默认取编译时刻（`yyyyMMdd.HHmm`），`versionCode` 取 `yyMMddHH`，都是自动递增的，不用再手工维护。
+  需要复现某次构建时可以覆盖：`./gradlew assembleRelease -PbuildTime=2026-09-18T16:30`。
+- 本工程没有任何 `.so`，所以按 CPU 架构拆包不会减小体积，默认只出一个通用包。
+  将来引入原生库后可以执行 `./gradlew assembleRelease -PabiSplit`，一次得到各架构分包 + 通用包。
+- 未配置签名密钥时会自动回退到 debug 签名，产物依然可以直接安装，便于本地与 CI 使用。
+  配置正式签名只需在 `android/local.properties` 写入 `RELEASE_STORE_FILE` / `RELEASE_STORE_PASSWORD` / `RELEASE_KEY_ALIAS` / `RELEASE_KEY_PASSWORD`。
 
 推送 tag（`v*`）时 GitHub Actions 会自动编译并把 APK 发布到对应 Release，详见 `.github/workflows/build-apk.yml`。
 
@@ -95,6 +127,7 @@ cd android
 
 - 所有地址常量的**唯一出处**是 `android/app/src/main/java/com/xu42/tv/live/util/AppConfig.java`。
 - 内置网页使用「伪源」`https://tv.xu42.com/tv-web/`，由 `WebViewClientImpl.shouldInterceptRequest` 从本地读取，**不需要真实部署、也不会产生网络请求**。修改它需同步改 `AppConfig.WEB_ORIGIN` 与 `web/tv-web/js/end.js` 的 `_tvWebOrigin`。
+- 频道数据 `web/tv-web/js/cctv/tv.yml` 里同一个台可能出现在多个分组（如 CCTV-1 同时在「央视」和「央视源2」）。运行时由 `UpdateService.initTvData()` 按频道名合并成一条并建立「任一源地址 → 频道」的索引，界面上只展示频道。
 - 改动 `web/tv-web` 后务必重新执行 `node scripts/build-web.js`，否则 App 里看到的还是旧页面。
 
 ---

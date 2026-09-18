@@ -82,16 +82,13 @@
     config:{
          isTvApp:false,
     },
-    getURL(src){
+   getURL(src){
        // 当前就在应用内置页面里时，用当前源即可；否则用伪源常量
        let baseUrl= window.location.href.indexOf("/tv-web/")>0
               ? window.location.origin+"/tv-web/"
               : _tvWebOrigin;
-           if(window.location.href.startsWith("https://www.bestv.com.cn/web/play/")){
-               baseUrl="https://www.bestv.com.cn/tv-web/";
-           }
        return baseUrl+src;
-    },
+   },
      app(normal,callback){
            if(!this.config.isTvApp){
                normal();

@@ -32,7 +32,9 @@ app/src/main/
 │   │   ├── activity_start.xml      # 启动页布局
 │   │   ├── activity_home.xml       # 首页布局
 │   │   ├── activity_main.xml       # 影视页面布局
-│   │   ├── activity_live.xml       # 直播页面布局
+│   │   ├── activity_live.xml       # 直播页面布局（含二级分类菜单容器）
+│   │   ├── item_live_category.xml  # 直播分类行（左侧列表）
+│   │   ├── item_live_channel.xml   # 直播频道行（右侧列表）
 │   │   └── dialog_exit.xml         # 退出对话框布局
 │   ├── values/                     # 资源值
 │   └── drawable/                   # 图片资源
@@ -59,9 +61,11 @@ app/src/main/
 - 支持返回退出对话框
 
 ### 4. LiveActivity（直播页面）
-- 电视直播功能
-- 支持快速切台（上下左右键）
-- 支持频道列表选择
+- 电视直播功能，**二级分类菜单**：左侧是分类（央视 / 卫视 / 各省地方台…），右侧是该分类下的频道
+- 每个频道可以有 **1 个或多个源**，列表里不再暴露源（只显示「N 源」角标），默认播放央视网
+- **自动容灾**：默认源播放失败（主帧加载报错 / HTTP ≥400 / 超时 / 页面里探测不到播放器）时，自动切到该频道的下一个源，并 toast 提示「播放失败，自动切到…」
+- **手动换源**：播放中按左右键即可在同一频道的多个源之间循环切换
+- 上/下键在当前分类内快速切台；按 MENU / SETTINGS / OK 呼出二级分类菜单
 - 切台期间显示「加载中」跳动圆点遮罩，避免露出未渲染完的网页
 - 支持返回退出对话框
 
@@ -173,9 +177,10 @@ ToastUtils.show(context, "提示信息", Toast.LENGTH_SHORT);
 - 选中记忆最近一次使用的入口
 
 ### 3. 直播功能
-- 支持遥控器上下左右快速切台
-- 支持频道列表选择
-- 记录观看历史
+- 二级分类菜单：左分类 / 右频道，遥控器上下切分类、左右进频道
+- 一个频道多个源，默认央视网，失败自动切换，也可手动左右键换源
+- 支持遥控器上下键在当前分类内快速切台
+- 记录观看历史（含上次使用的源）
 
 ### 4. 视频点播功能
 - 支持选集、画质、倍速调节
@@ -208,9 +213,37 @@ cd android
 
 # Release版本（无签名密钥时自动回退 debug 签名，产物同样可安装）
 ./gradlew assembleRelease
+
+# 按 CPU 架构拆包（额外产出 4 个分包 + 1 个通用包）
+./gradlew assembleRelease -PabiSplit
 ```
 
-产物路径：`android/app/build/outputs/apk/release/taotao-tv-<versionName>.apk`
+产物路径：`android/app/build/outputs/apk/release/`
+- 通用包：`taotao-tv-<versionName>.apk`
+- 分包（`-PabiSplit`）：`taotao-tv-<versionName>-arm64-v8a.apk` 等
+
+默认只出通用包：本工程是纯 Java + 内置网页，**没有任何 `.so`**，拆包出来的内容完全一样，
+并不会有体积收益，所以拆包开关默认关闭，将来引入原生库后再打开。
+
+### 版本号（按编译时间自动生成）
+不再写死，默认取编译那一刻：
+- `versionName` = `yyyyMMdd.HHmm`（精确到分钟，APK 文件名也会带上）
+- `versionCode` = `yyMMddHH`（单调递增，不会溢出 int）
+
+需要复现某次构建或手工指定时可以覆盖：
+```bash
+./gradlew assembleRelease -PbuildTime=2026-09-18T16:30
+./gradlew assembleRelease -PversionName=1.0.0 -PversionCode=100000
+```
+
+### 体积优化
+Release 构建已开启，无需额外参数：
+- `minifyEnabled true` + `shrinkResources true`：R8 混淆 + 资源裁剪（dex 未压缩从 5.3MB 降到 670KB）
+- `resConfigs "zh","en"`：只保留中英文资源
+- `packaging.resources.excludes`：剔除 `META-INF/*`、`kotlin/**`、`DebugProbesKt.bin` 等构建元数据
+- `dependenciesInfo includeInApk false`：不写入依赖信息
+
+当前 Release 通用包约 **963 KB**（优化前 3.6 MB）。
 
 ## 注意事项
 
@@ -220,8 +253,22 @@ cd android
 4. **WebView内存**: 注意WebView的内存管理，及时释放资源
 5. **焦点处理**: TV应用需要特别注意焦点处理，确保遥控器可以正常导航
 6. **assets 不入库**: `android/app/src/main/assets/tv-web` 由 `scripts/build-web.js` 生成，仓库里不提交
+7. **架构拆包的两个坑（AGP 8.12 实测）**: `splits.abi` 里**不能**调用 `reset()`——内部判定是
+   `isAbiEnabled() = !isReset && enable`，出现过一次 `reset()` 拆包就被永久关掉；
+   另外 `include(...)` 已是空实现（不报错但不生效），要限制架构范围得用 `exclude(...)`。
+   改 APK 文件名时也不能在 `variant.outputs.all {}` 里用隐式的 `output`，会抛
+   `MissingPropertyException`，被 catch 吞掉后所有分包重名互相覆盖（只剩一个文件甚至写出损坏的 zip）。
 
 ## 更新日志
+
+### v1.1.0 (2026-09-18)
+- ✅ 直播切台改为**二级分类菜单**（左分类 / 右频道），列表不再展示源
+- ✅ 频道**多源**模型：默认央视网，播放失败自动切源，播放中左右键手动换源
+- ✅ 移除百视通（bestv）源及其网页分支
+- ✅ 版本号改为按编译时间自动生成（`versionName=yyyyMMdd.HHmm` / `versionCode=yyMMddHH`）
+- ✅ 体积优化：R8 + shrinkResources + 资源裁剪，Release 包 3.6MB → 963KB
+- ✅ 新增可选 ABI 拆包开关 `-PabiSplit`（分包 + 通用包）
+- ✅ 清理无用目录与文件（`util/`、`img/`、`web/tv-web` 下废弃页面与脚本）
 
 ### v1.0.0 (2025-10-03)
 - ✅ 新增退出对话框功能

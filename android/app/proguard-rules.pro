@@ -1,32 +1,33 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
+# 桃桃TV 混淆规则
 #
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# release 包开启了 R8（minifyEnabled + shrinkResources），这里只保留「运行时靠名字
+# 找到的东西」：JS 桥接方法、Gson 反序列化的数据类、Room 实体等。
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# 保留异常、泛型签名与注解：Gson 的 TypeToken / Room 的注解都依赖它们
+-keepattributes Exceptions,Signature,InnerClasses,EnclosingMethod
+-keepattributes *Annotation*,AnnotationDefault
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
-
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
-
--keepattributes Exceptions
 -optimizationpasses 5
 -dontwarn dalvik.**
 
-# 与网页交互的 JS 桥接方法（_api / _apiX 等）不能被混淆，否则网页侧调用会失效
+# ------------------------------------------------------------------ JS 桥接
+# 网页侧通过 _api / _apiX 反射调用这些方法，名字不能被改
 -keepclassmembers class * {
     @android.webkit.JavascriptInterface <methods>;
 }
 
+# ------------------------------------------------------------------ 数据模型
+# 这些类靠字段名做 json <-> 对象互转，字段名不能被混淆
 -keep class com.xu42.tv.live.domain.** { *; }
+-keep class com.xu42.tv.live.dao.** { *; }
+-keepclassmembers class com.xu42.tv.live.dao.** { <fields>; }
+
+# ------------------------------------------------------------------ 第三方
+# okhttp / okio 的可选依赖缺失时的告警
+-dontwarn okhttp3.**
+-dontwarn okio.**
+-dontwarn com.qiniu.**
+-dontwarn org.conscrypt.**
+-dontwarn org.bouncycastle.**
+-dontwarn org.openjsse.**
+-dontwarn androidx.room.paging.**

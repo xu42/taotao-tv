@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <layout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools">
 
     <data>
@@ -95,172 +94,121 @@
             </LinearLayout>
         </FrameLayout>
 
-        <!-- 菜单容器 -->
+        <!--
+            切台菜单：左边是分类（收藏 / 央视 / 卫视 / 各省），右边是该分类下的频道。
+            遥控器：左右在两栏之间移动，上下在本栏内移动，OK 播放并收起菜单。
+        -->
         <LinearLayout
             android:id="@+id/menuContainer"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:background="#00000000"
+            android:orientation="horizontal"
+            android:background="#CC07090D"
             android:visibility="gone"
             android:clickable="true"
             android:focusable="true">
 
+            <!-- 左栏：分类 -->
             <LinearLayout
-                android:layout_width="300dp"
+                android:layout_width="320dp"
                 android:layout_height="match_parent"
-                android:layout_gravity="start"
-                android:background="#80000000"
-                android:orientation="vertical">
+                android:orientation="vertical"
+                android:background="#F0141A24"
+                android:paddingTop="26dp"
+                android:paddingBottom="26dp">
 
-                <!-- 源站标题栏：按设置(MENU)键→菜单内左右切换播放源 -->
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingLeft="26dp"
+                    android:paddingRight="26dp"
+                    android:paddingBottom="12dp"
+                    android:text="频道分类"
+                    android:textColor="#7F8798"
+                    android:textSize="14sp" />
+
+                <ListView
+                    android:id="@+id/categoryList"
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
+                    android:divider="@null"
+                    android:dividerHeight="0dp"
+                    android:listSelector="@drawable/live_menu_selector"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:descendantFocusability="afterDescendants" />
+            </LinearLayout>
+
+            <!-- 右栏：该分类下的频道 -->
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:paddingTop="26dp"
+                android:paddingBottom="18dp"
+                android:paddingLeft="28dp"
+                android:paddingRight="36dp">
+
                 <LinearLayout
-                    android:id="@+id/sourceRow"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
-                    android:background="#66000000">
-
-                    <FrameLayout
-                        android:id="@+id/prevSourceArea"
-                        android:layout_width="0dp"
-                        android:layout_height="48dp"
-                        android:layout_weight="1"
-                        android:clickable="true"
-                        android:focusable="true"
-                        android:background="@drawable/menu_button_background">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="match_parent"
-                            android:layout_marginStart="16dp"
-                            android:gravity="center"
-                            android:text="←"
-                            android:textColor="#FFFFFF"
-                            android:textSize="20sp" />
-                    </FrameLayout>
+                    android:gravity="center_vertical">
 
                     <TextView
-                        android:id="@+id/sourceName"
+                        android:id="@+id/categoryTitle"
                         android:layout_width="wrap_content"
-                        android:layout_height="48dp"
-                        android:layout_marginStart="-50dp"
-                        android:layout_marginEnd="-50dp"
-                        android:clickable="false"
-                        android:gravity="center"
-                        android:text="全部源"
-                        android:textColor="#FFB37A"
-                        android:textSize="18sp" />
-
-                    <FrameLayout
-                        android:id="@+id/nextSourceArea"
-                        android:layout_width="0dp"
-                        android:layout_height="48dp"
-                        android:layout_weight="1"
-                        android:clickable="true"
-                        android:focusable="true"
-                        android:background="@drawable/menu_button_background">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="match_parent"
-                            android:layout_gravity="end"
-                            android:layout_marginEnd="16dp"
-                            android:gravity="center"
-                            android:text="→"
-                            android:textColor="#FFFFFF"
-                            android:textSize="20sp" />
-                    </FrameLayout>
-
-                </LinearLayout>
-
-                <!-- 分类标题栏 -->
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical">
-
-                    <!-- 第一栏布局 -->
-                    <LinearLayout
-                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:background="#80000000">
+                        android:textColor="#FFFFFF"
+                        android:textSize="22sp"
+                        tools:text="央视" />
 
-                        <!-- 左半边区域（包含左箭头和省份名称左半部分） -->
-                        <FrameLayout
-                            android:id="@+id/prevProvinceArea"
-                            android:layout_width="0dp"
-                            android:layout_height="48dp"
-                            android:layout_weight="1"
-                            android:clickable="true"
-                            android:focusable="true"
-                            android:background="@drawable/menu_button_background">
+                    <TextView
+                        android:id="@+id/categoryCount"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginLeft="12dp"
+                        android:textColor="#7F8798"
+                        android:textSize="14sp"
+                        tools:text="19 个频道" />
 
-                            <!-- 左箭头 -->
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="match_parent"
-                                android:layout_marginStart="16dp"
-                                android:gravity="center"
-                                android:text="←"
-                                android:textSize="20sp"
-                                android:textColor="#FFFFFF"/>
-                        </FrameLayout>
-
-                        <!-- 省份名称居中显示 -->
-                        <TextView
-                            android:id="@+id/provinceName"
-                            android:layout_width="wrap_content"
-                            android:layout_height="48dp"
-                            android:layout_marginStart="-50dp"
-                            android:layout_marginEnd="-50dp"
-                            android:gravity="center"
-                            android:textColor="#FFFFFF"
-                            android:textSize="20sp"
-                            android:clickable="false"/>
-
-                        <!-- 右半边区域（包含右箭头和省份名称右半部分） -->
-                        <FrameLayout
-                            android:id="@+id/nextProvinceArea"
-                            android:layout_width="0dp"
-                            android:layout_height="48dp"
-                            android:layout_weight="1"
-                            android:clickable="true"
-                            android:focusable="true"
-                            android:background="@drawable/menu_button_background">
-
-                            <!-- 右箭头 -->
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="match_parent"
-                                android:layout_gravity="end"
-                                android:layout_marginEnd="16dp"
-                                android:gravity="center"
-                                android:text="→"
-                                android:textSize="20sp"
-                                android:textColor="#FFFFFF"/>
-                        </FrameLayout>
-
-                    </LinearLayout>
-
+                    <TextView
+                        android:id="@+id/sourceHint"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:gravity="right"
+                        android:textColor="#FF8A3D"
+                        android:textSize="15sp"
+                        tools:text="央视网 · 2 个源" />
                 </LinearLayout>
 
-                <!-- 频道列表 -->
                 <ListView
                     android:id="@+id/channelList"
                     android:layout_width="match_parent"
                     android:layout_height="0dp"
                     android:layout_weight="1"
-                    android:divider="#33FFFFFF"
-                    android:dividerHeight="1dp"
-                    android:listSelector="@drawable/menu_button_background"
+                    android:layout_marginTop="10dp"
+                    android:divider="@null"
+                    android:dividerHeight="0dp"
+                    android:listSelector="@drawable/live_menu_selector"
                     android:clickable="true"
                     android:focusable="true"
-                    android:descendantFocusability="afterDescendants"/>
+                    android:descendantFocusability="afterDescendants" />
 
+                <TextView
+                    android:id="@+id/menuHint"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:text="▲▼ 选择    ◀▶ 切栏    OK 播放    设置键 收藏    播放中 ◀▶ 换源"
+                    android:textColor="#6B7385"
+                    android:textSize="13sp" />
             </LinearLayout>
         </LinearLayout>
-        
+
         <!-- 退出对话框 -->
         <include
             android:id="@+id/exitDialog"

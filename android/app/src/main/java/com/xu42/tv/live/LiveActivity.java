@@ -5,30 +5,31 @@ import android.animation.PropertyValuesHolder;
 import android.animation.ValueAnimator;
 import android.content.Context;
 import android.content.Intent;
-import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
 import android.view.KeyEvent;
+import android.view.LayoutInflater;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.animation.AccelerateDecelerateInterpolator;
 import android.webkit.JavascriptInterface;
 import android.webkit.PermissionRequest;
+import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebView;
-import android.widget.AbsListView;
-import android.widget.ArrayAdapter;
-import android.widget.Button;
+import android.widget.AdapterView;
+import android.widget.BaseAdapter;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
+import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 import androidx.databinding.DataBindingUtil;
 
 import com.google.gson.reflect.TypeToken;
@@ -36,11 +37,6 @@ import com.google.gson.reflect.TypeToken;
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -67,49 +63,38 @@ import com.xu42.tv.live.utils.ToastUtils;
 /**
  * 电视直播。
  *
- * - 进入即播放上一次看的频道，没有记录时播 CCTV-1
- * - 上下左右：快速切台
- * - 设置(MENU)键：打开频道菜单并定位到「源」，左右切换播放源
- * - OK 键：打开频道菜单，定位到频道列表
- * - 数字键：跳到收藏栏的第 N 个频道
+ * 播放时：
+ *   上下   上一个 / 下一个频道（在当前分类内循环）
+ *   左右   切换这个台的下一个 / 上一个源（默认央视网，失败会自动降级）
+ *   OK     打开切台菜单
+ *   数字键 跳到「收藏」分组的第 N 个频道
+ *   返回   退出确认
+ *
+ * 切台菜单（二级分类）：
+ *   左栏是分类（收藏 / 央视 / 卫视 / 各省），右栏是该分类下的频道。
+ *   左右在两栏间移动，上下在本栏内移动，OK 播放并收起菜单，设置键收藏。
  */
 public class LiveActivity extends BaseActivity {
     protected String TAG = "LiveActivity";
 
     protected ActivityLiveBinding binding;
-    private Context thisContext;
 
     /** 当前播放的频道（静态保存，页面来回切换时保留） */
     private static Vod currentLive = null;
+    /** 当前播放的源在该频道源列表里的下标 */
+    private static int currentSourceIndex = 0;
+    /** 菜单里选中的分类 / 频道 */
+    private static int currentCategoryIndex = 0;
+    private static int currentChannelIndex = 0;
 
-    /** 全量直播数据（含收藏分组） */
-    private final List<Live> allLives = new ArrayList<>();
-    /** 按当前源站过滤后的分组，界面与导航都以它为准 */
-    private List<Live> provinces = new ArrayList<>();
-    private int currentProvinceIndex = 0;
-    private int currentDetailIndex = 0;
-
-    /** 源站列表：[0] 为「全部源」，其余按数据里的频道数量排序 */
-    private final List<String> sourceNames = new ArrayList<>();
-    private int sourceIndex = 0;
-
-    /** 把上游站点归到用户认得出来的名字 */
-    private static final String[][] SOURCE_RULES = {
-            {"tv.cctv.com", "央视网"},
-            {"yangshipin.cn", "央视频"},
-            {"mgtv.com", "芒果TV"},
-            {"youku.com", "优酷"},
-            {"iqiyi.com", "爱奇艺"},
-            {"le.com", "乐视"},
-            {"ixigua.com", "西瓜视频"},
-            {"bilibili.com", "哔哩哔哩"},
-    };
-    private static final String SOURCE_ALL = "全部源";
-    private static final String SOURCE_OTHER = "各地广电";
+    /** 全量分组（收藏 + 归一化后的分类） */
+    private final List<Live> categories = new ArrayList<>();
 
     private DialogExitBinding exitDialogBinding;
     private boolean isExitDialogShowing = false;
     private boolean isMenuShow = false;
+    /** 正在给菜单灌数据：此时的列表选择回调是副作用，不是用户操作 */
+    private boolean syncingMenu = false;
 
     private FavoriteService favoriteService;
 
@@ -121,7 +106,11 @@ public class LiveActivity extends BaseActivity {
     /** 遮罩最短展示时长，避免「闪一下」的突兀感 */
     private static final long LOADING_MIN_MS = 600L;
     /** 兜底超时：即使没收到 100% 也要收起遮罩，防止卡死在加载态 */
-    private static final long LOADING_TIMEOUT_MS = 15000L;
+    private static final long LOADING_TIMEOUT_MS = 20000L;
+    /** 主文档迟迟加载不完 -> 判定这一路源失败 */
+    private static final long LOAD_WATCHDOG_MS = 22000L;
+    /** 加载完成后再等一会儿探测页面里有没有播放器 */
+    private static final long VIDEO_PROBE_DELAY_MS = 4500L;
 
     private FrameLayout loadingOverlay;
     private LinearLayout loadingDots;
@@ -130,18 +119,31 @@ public class LiveActivity extends BaseActivity {
     private boolean isLoadingShown = false;
     private long loadingShownAt = 0L;
 
+    // ---------------------------------------------------------------- 换源状态机
+    /** 每次发起加载自增，用来丢弃过期的回调 */
+    private int loadGeneration = 0;
+    /** 本轮加载里已经自动换源几次（手动操作会清零） */
+    private int autoSwitchTried = 0;
+    /** 已经判定失败并处理过的 generation */
+    private int failedGeneration = -1;
+    /** 当前是否已经加载出画面 */
+    private boolean playingStarted = false;
+    /** 本次正在加载的地址，用来识别上一次加载迟到的错误回调 */
+    private String pendingUrl = null;
+
     @Override
     protected void createInit() {
         bind();
         UpdateService.baseFolder = this.getFilesDir().getPath();
         UpdateService.updateRes(this);
         UpdateService.initTvData();
-        thisContext = this;
         favoriteService = FavoriteService.getInstance(this);
 
         if (null == currentLive) {
             // 记忆上次看的频道；没有记录时默认 CCTV-1
             currentLive = HistoryDaoX.currentChannel(this);
+            currentSourceIndex = UpdateService.sourceIndexOf(
+                    currentLive, HistoryDaoX.currentChannelUrl(this));
         }
         if (null == currentLive) {
             ToastUtils.show(this, "频道数据加载失败，请检查网络后重试", Toast.LENGTH_SHORT);
@@ -154,181 +156,120 @@ public class LiveActivity extends BaseActivity {
         mWebView.requestFocus();
         binding.webviewWrapper.requestFocus();
 
-        showLoading(currentLive.getName());
-        mWebView.loadUrl(currentLive.getUrl());
-        ToastUtils.show(this, "已切到 " + currentLive.getName() + "，按设置键可切换源", Toast.LENGTH_SHORT);
+        startLoad(currentSourceIndex, false);
+        ToastUtils.show(this, "已切到 " + currentLive.getName() + "，按 OK 键可切换频道", Toast.LENGTH_SHORT);
     }
 
-    /** 后台加载频道数据，回主线程构建源站与列表 */
+    /** 后台加载频道数据，回主线程构建分类与菜单 */
     private void initData() {
         new Thread(() -> {
             List<Live> result = UpdateService.getByLivesWithFavorites(this);
             runOnUiThread(() -> {
-                allLives.clear();
-                allLives.addAll(result);
-                buildSources();
-                applySourceFilter();
+                categories.clear();
+                categories.addAll(result);
                 locateCurrent();
-                showSourceName();
-                showCurrentProvince(false);
+                if (isMenuShow) {
+                    syncMenu();
+                }
             });
         }).start();
     }
 
-    /** 统计各源站的频道数量，生成源站列表 */
-    private void buildSources() {
-        final Map<String, Integer> counter = new LinkedHashMap<>();
-        for (Live live : allLives) {
-            if ("favorite".equals(live.getTag())) {
-                continue;
-            }
-            for (Vod vod : live.getVods()) {
-                String name = sourceNameOf(vod.getUrl());
-                Integer old = counter.get(name);
-                counter.put(name, null == old ? 1 : old + 1);
-            }
-        }
-        List<Map.Entry<String, Integer>> entries = new ArrayList<>(counter.entrySet());
-        Collections.sort(entries, new Comparator<Map.Entry<String, Integer>>() {
-            @Override
-            public int compare(Map.Entry<String, Integer> a, Map.Entry<String, Integer> b) {
-                return b.getValue() - a.getValue();
-            }
-        });
-
-        sourceNames.clear();
-        sourceNames.add(SOURCE_ALL);
-        for (Map.Entry<String, Integer> entry : entries) {
-            sourceNames.add(entry.getKey());
-        }
-        if (sourceIndex >= sourceNames.size()) {
-            sourceIndex = 0;
-        }
-    }
-
-    private String sourceNameOf(String url) {
-        String host = hostOf(url);
-        for (String[] rule : SOURCE_RULES) {
-            if (host.contains(rule[0])) {
-                return rule[1];
-            }
-        }
-        return SOURCE_OTHER;
-    }
-
-    private String hostOf(String url) {
-        if (null == url) {
-            return "";
-        }
-        String u = url;
-        int scheme = u.indexOf("://");
-        if (scheme > 0) {
-            u = u.substring(scheme + 3);
-        }
-        int slash = u.indexOf('/');
-        if (slash > 0) {
-            u = u.substring(0, slash);
-        }
-        int colon = u.indexOf(':');
-        if (colon > 0) {
-            u = u.substring(0, colon);
-        }
-        return u;
-    }
-
-    /** 按当前源站重新构建分组（收藏分组始终保留） */
-    private void applySourceFilter() {
-        String wantSource = sourceNames.isEmpty() ? SOURCE_ALL : sourceNames.get(sourceIndex);
-        boolean all = SOURCE_ALL.equals(wantSource);
-
-        List<Live> filtered = new ArrayList<>();
-        for (Live live : allLives) {
-            if ("favorite".equals(live.getTag())) {
-                filtered.add(live);
-                continue;
-            }
-            List<Vod> vods = new ArrayList<>();
-            for (Vod vod : live.getVods()) {
-                if (all || wantSource.equals(sourceNameOf(vod.getUrl()))) {
-                    vods.add(vod);
-                }
-            }
-            if (vods.isEmpty()) {
-                continue;
-            }
-            Live group = new Live();
-            group.setName(live.getName());
-            group.setTag(live.getTag());
-            group.setIndex(live.getIndex());
-            group.setVods(vods);
-            filtered.add(group);
-        }
-        provinces = filtered;
-        clampIndex();
-    }
-
-    private void clampIndex() {
-        if (provinces.isEmpty()) {
-            currentProvinceIndex = 0;
-            currentDetailIndex = 0;
-            return;
-        }
-        if (currentProvinceIndex < 0) {
-            currentProvinceIndex = 0;
-        }
-        if (currentProvinceIndex >= provinces.size()) {
-            currentProvinceIndex = provinces.size() - 1;
-        }
-        List<Vod> vods = provinces.get(currentProvinceIndex).getVods();
-        if (currentDetailIndex >= vods.size()) {
-            currentDetailIndex = Math.max(0, vods.size() - 1);
-        }
-    }
-
-    /** 把当前正在播放的频道定位到（过滤后的）列表位置 */
+    /** 把当前播放的频道定位到分类/频道下标上 */
     private void locateCurrent() {
-        clampIndex();
-        if (null == currentLive) {
+        if (null == currentLive || categories.isEmpty()) {
             return;
         }
-        for (int i = 0; i < provinces.size(); i++) {
-            List<Vod> vods = provinces.get(i).getVods();
+        for (int i = 0; i < categories.size(); i++) {
+            List<Vod> vods = categories.get(i).getVods();
+            if (null == vods) {
+                continue;
+            }
             for (int j = 0; j < vods.size(); j++) {
-                if (currentLive.getUrl() != null
-                        && currentLive.getUrl().equals(vods.get(j).getUrl())) {
-                    currentProvinceIndex = i;
-                    currentDetailIndex = j;
+                if (sameChannel(vods.get(j), currentLive)) {
+                    currentCategoryIndex = i;
+                    currentChannelIndex = j;
                     return;
                 }
             }
         }
     }
 
+    /** 两个 Vod 是否是「同一个台」（多源频道只要有任何一路源相同就算） */
+    private static boolean sameChannel(Vod a, Vod b) {
+        if (a == b) {
+            return true;
+        }
+        if (null == a || null == b) {
+            return false;
+        }
+        String ua = UpdateService.cleanUrl(a.getUrl());
+        String ub = UpdateService.cleanUrl(b.getUrl());
+        if (null != ua && ua.equals(ub)) {
+            return true;
+        }
+        String ka = identityOf(a);
+        String kb = identityOf(b);
+        return !ka.isEmpty() && ka.equals(kb);
+    }
+
+    /** 频道的身份：取默认源的地址 */
+    private static String identityOf(Vod vod) {
+        if (null == vod) {
+            return "";
+        }
+        List<Vod> sources = vod.getSources();
+        if (null != sources && !sources.isEmpty()) {
+            String url = UpdateService.cleanUrl(sources.get(0).getUrl());
+            return null == url ? "" : url;
+        }
+        String url = UpdateService.cleanUrl(vod.getUrl());
+        return null == url ? "" : url;
+    }
+
     // ------------------------------------------------------------------ 播放
 
-    private long lastTime = 0;
-
     protected void initWebViewClient() {
-        mWebView.setWebViewClient(new WebViewClientImpl(getBaseContext(), mWebView, 1));
+        WebViewClientImpl client = new WebViewClientImpl(getBaseContext(), mWebView, 1);
+        client.setLoadStateListener(new WebViewClientImpl.LoadStateListener() {
+            @Override
+            public void onMainFrameError(String url, String reason) {
+                onSourceFailed(url, "页面加载失败");
+            }
+        });
+        mWebView.setWebViewClient(client);
     }
+
+    // 消息常量
+    private static final int MSG_CLEAR_NAME = 2;
+    private static final int MSG_LOADING_TIMEOUT = 3;
+    private static final int MSG_LOAD_WATCHDOG = 4;
+    private static final int MSG_VIDEO_PROBE = 5;
+    private static final int MSG_HIDE_LOADING = 6;
 
     private Handler handler = new Handler(Looper.getMainLooper()) {
         @Override
         public void handleMessage(@NonNull Message msg) {
             super.handleMessage(msg);
             switch (msg.what) {
-                case 1:
-                    String url = (String) msg.obj;
-                    if (null != currentLive && null != mWebView
-                            && null != url && url.equals(currentLive.getUrl())) {
-                        mWebView.loadUrl(url);
-                    }
-                    break;
-                case 2:
+                case MSG_CLEAR_NAME:
                     binding.liveName.setText("");
                     break;
-                case 3:
-                    // 加载兜底超时：直接收起遮罩
+                case MSG_LOADING_TIMEOUT:
+                    // 兜底：无论如何都要把遮罩收起来
+                    doHideLoading();
+                    break;
+                case MSG_LOAD_WATCHDOG:
+                    if (msg.arg1 == loadGeneration && !playingStarted) {
+                        onSourceFailed(pendingUrl, "加载超时");
+                    }
+                    break;
+                case MSG_VIDEO_PROBE:
+                    if (msg.arg1 == loadGeneration) {
+                        probeVideoElement(msg.arg1);
+                    }
+                    break;
+                case MSG_HIDE_LOADING:
                     doHideLoading();
                     break;
                 default:
@@ -337,62 +278,253 @@ public class LiveActivity extends BaseActivity {
         }
     };
 
-    /** 上下左右在「当前可见的」频道之间切换 */
-    private boolean goNext(String nextType) {
-        if (provinces.isEmpty()) {
-            return true;
+    /** 某个频道的第 index 路源地址 */
+    private String sourceUrl(Vod channel, int index) {
+        if (null == channel) {
+            return null;
         }
-        clampIndex();
-        List<Vod> vods = provinces.get(currentProvinceIndex).getVods();
+        List<Vod> sources = channel.getSources();
+        if (null == sources || sources.isEmpty()) {
+            return index == 0 ? channel.getUrl() : null;
+        }
+        if (index < 0 || index >= sources.size()) {
+            index = 0;
+        }
+        return sources.get(index).getUrl();
+    }
+
+    /** 加载中的文案：频道名 · 源名 (1/2) */
+    private String loadingLabel(Vod channel, int index) {
+        if (null == channel) {
+            return "频道";
+        }
+        List<Vod> sources = channel.getSources();
+        if (null == sources || sources.isEmpty()) {
+            return channel.getName();
+        }
+        if (index < 0 || index >= sources.size()) {
+            index = 0;
+        }
+        if (sources.size() <= 1) {
+            return channel.getName();
+        }
+        return channel.getName() + " · " + sources.get(index).getName()
+                + " (" + (index + 1) + "/" + sources.size() + ")";
+    }
+
+    /**
+     * 加载当前频道的指定源。
+     *
+     * @param index  源下标
+     * @param byAuto true 表示这次是「上一个源播放失败后自动降级」，会计入自动换源次数
+     */
+    private void startLoad(int index, boolean byAuto) {
+        if (null == currentLive || null == mWebView) {
+            return;
+        }
+        List<Vod> sources = currentLive.getSources();
+        int total = (null == sources || sources.isEmpty()) ? 1 : sources.size();
+        if (index < 0 || index >= total) {
+            index = 0;
+        }
+        String url = sourceUrl(currentLive, index);
+        if (null == url || url.trim().isEmpty()) {
+            ToastUtils.show(this, "「" + currentLive.getName() + "」没有可用的播放地址", Toast.LENGTH_SHORT);
+            return;
+        }
+        currentSourceIndex = index;
+        pendingUrl = url;
+        if (byAuto) {
+            autoSwitchTried++;
+        } else {
+            autoSwitchTried = 0;
+        }
+        loadGeneration++;
+        failedGeneration = -1;
+        playingStarted = false;
+        final int generation = loadGeneration;
+
+        showLoading(loadingLabel(currentLive, index));
+        handler.removeMessages(MSG_LOAD_WATCHDOG);
+        handler.sendMessageDelayed(
+                handler.obtainMessage(MSG_LOAD_WATCHDOG, generation, 0), LOAD_WATCHDOG_MS);
+        LogUtil.i(TAG, "startLoad#" + generation + " source#" + index + " " + url);
+        mWebView.loadUrl(url);
+    }
+
+    /** 手动换源：播放时按左右键 */
+    private void switchSource(int dir) {
+        if (null == currentLive) {
+            return;
+        }
+        List<Vod> sources = currentLive.getSources();
+        int total = (null == sources || sources.isEmpty()) ? 1 : sources.size();
+        if (total <= 1) {
+            ToastUtils.show(this, "「" + currentLive.getName() + "」只有 1 个源", Toast.LENGTH_SHORT);
+            return;
+        }
+        int next = (currentSourceIndex + dir + total) % total;
+        ToastUtils.show(this, "已切到 " + sources.get(next).getName()
+                + " (" + (next + 1) + "/" + total + ")", Toast.LENGTH_SHORT);
+        startLoad(next, false);
+    }
+
+    /** 某一路源播不出来：自动切到下一路，全试完就提示放弃 */
+    private void onSourceFailed(String failedUrl, String reason) {
+        if (null == currentLive) {
+            doHideLoading();
+            return;
+        }
+        if (isStaleError(failedUrl)) {
+            LogUtil.i(TAG, "忽略上一次加载的迟到错误回调 " + failedUrl);
+            return;
+        }
+        if (loadGeneration == failedGeneration) {
+            return;
+        }
+        failedGeneration = loadGeneration;
+
+        List<Vod> sources = currentLive.getSources();
+        int total = (null == sources || sources.isEmpty()) ? 1 : sources.size();
+        LogUtil.i(TAG, "onSourceFailed[" + reason + "] " + loadingLabel(currentLive, currentSourceIndex)
+                + " autoTried=" + autoSwitchTried);
+
+        if (total <= 1) {
+            doHideLoading();
+            ToastUtils.show(this, "「" + currentLive.getName() + "」暂时播放不了（" + reason + "）",
+                    Toast.LENGTH_SHORT);
+            return;
+        }
+        if (autoSwitchTried >= total - 1) {
+            doHideLoading();
+            ToastUtils.show(this, "「" + currentLive.getName() + "」所有源都播放失败，换个频道试试",
+                    Toast.LENGTH_SHORT);
+            return;
+        }
+        int next = (currentSourceIndex + 1) % total;
+        String from = sources.get(currentSourceIndex).getName();
+        String to = sources.get(next).getName();
+        ToastUtils.show(this, "「" + from + "」播放失败，自动切到「" + to + "」", Toast.LENGTH_SHORT);
+        startLoad(next, true);
+    }
+
+    /**
+     * 判断这个错误是不是「上一次加载」迟到的回调。
+     *
+     * 换源时会立刻发起新的加载，但旧页面的 onReceivedError 可能晚一步才回来；
+     * 只要失败地址正好是本频道的另一路源，就说明它属于上一次加载，直接忽略。
+     */
+    private boolean isStaleError(String url) {
+        if (null == url || null == pendingUrl || sameUrl(url, pendingUrl)) {
+            return false;
+        }
+        List<Vod> sources = (null == currentLive) ? null : currentLive.getSources();
+        if (null == sources) {
+            return false;
+        }
+        for (Vod source : sources) {
+            if (sameUrl(url, source.getUrl())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean sameUrl(String a, String b) {
+        if (null == a || null == b) {
+            return false;
+        }
+        return a.equals(b) || UpdateService.cleanUrl(a).equals(UpdateService.cleanUrl(b));
+    }
+
+    /** 加载完成后看看页面里到底有没有播放器 */
+    private void probeVideoElement(final int generation) {
+        if (generation != loadGeneration || null == mWebView
+                || Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
+            return;
+        }
+        String js = "(function(){try{var n=document.getElementsByTagName('video').length"
+                + "+document.getElementsByTagName('iframe').length"
+                + "+document.querySelectorAll('video,.xgplayer,#mse,.vjs-tech,.prism-player').length;"
+                + "return ''+n;}catch(e){return 'err';}})()";
+        try {
+            mWebView.evaluateJavascript(js, new ValueCallback<String>() {
+                @Override
+                public void onReceiveValue(String value) {
+                    if (generation != loadGeneration) {
+                        return;
+                    }
+                    LogUtil.i(TAG, "probeVideoElement -> " + value);
+                    if (null == value || value.contains("err")) {
+                        return;
+                    }
+                    String num = value.replace("\"", "").trim();
+                    try {
+                        if (Integer.parseInt(num) <= 0) {
+                            onSourceFailed(pendingUrl, "页面上没有找到播放画面");
+                        }
+                    } catch (NumberFormatException ignore) {
+                    }
+                }
+            });
+        } catch (Throwable ignore) {
+        }
+    }
+
+    /** 播放当前分类里的第 index 个频道 */
+    private void playChannel(int index) {
+        List<Vod> vods = currentChannelList();
+        if (index < 0 || index >= vods.size()) {
+            return;
+        }
+        currentChannelIndex = index;
+        currentLive = vods.get(index);
+        // 收藏里的条目记住了当时看的那一路源，普通频道用默认源
+        currentSourceIndex = UpdateService.sourceIndexOf(currentLive, currentLive.getUrl());
+        ToastUtils.show(this, currentLive.getName(), Toast.LENGTH_SHORT);
+        startLoad(currentSourceIndex, false);
+    }
+
+    /** 播放中按上下键：在当前分类里前后换台 */
+    private boolean nextChannel(int dir) {
+        List<Vod> vods = currentChannelList();
         if (vods.isEmpty()) {
             return true;
         }
-        int tag = currentProvinceIndex;
-        int detail = currentDetailIndex;
-        switch (nextType) {
-            case "up":
-                detail = (detail <= 0) ? vods.size() - 1 : detail - 1;
-                break;
-            case "down":
-                detail = (detail >= vods.size() - 1) ? 0 : detail + 1;
-                break;
-            case "left":
-                tag = (tag <= 0) ? provinces.size() - 1 : tag - 1;
-                detail = 0;
-                break;
-            case "right":
-                tag = (tag >= provinces.size() - 1) ? 0 : tag + 1;
-                detail = 0;
-                break;
-            default:
-                return true;
-        }
-        List<Vod> target = provinces.get(tag).getVods();
-        if (target.isEmpty()) {
-            return true;
-        }
-        if (detail >= target.size()) {
-            detail = 0;
-        }
-        currentProvinceIndex = tag;
-        currentDetailIndex = detail;
-        currentLive = target.get(detail);
-        showToast(currentLive.getName(), this);
-        showLoading(currentLive.getName());
-        handler.sendMessageDelayed(handler.obtainMessage(1, currentLive.getUrl()), 700);
+        int index = (currentChannelIndex + dir + vods.size()) % vods.size();
+        playChannel(index);
         return true;
     }
 
-    private void playChannel(Vod channel) {
-        if (null == channel || null == channel.getUrl()) {
+    private List<Vod> currentChannelList() {
+        if (categories.isEmpty()) {
+            return new ArrayList<>();
+        }
+        clampIndex();
+        List<Vod> vods = categories.get(currentCategoryIndex).getVods();
+        return null == vods ? new ArrayList<Vod>() : vods;
+    }
+
+    private void clampIndex() {
+        if (categories.isEmpty()) {
+            currentCategoryIndex = 0;
+            currentChannelIndex = 0;
             return;
         }
-        currentLive = channel;
-        showLoading(channel.getName());
-        if (null != mWebView) {
-            mWebView.loadUrl(channel.getUrl());
+        if (currentCategoryIndex < 0) {
+            currentCategoryIndex = 0;
         }
-        ToastUtils.show(this, "已切到 " + channel.getName(), Toast.LENGTH_SHORT);
+        if (currentCategoryIndex >= categories.size()) {
+            currentCategoryIndex = categories.size() - 1;
+        }
+        List<Vod> vods = categories.get(currentCategoryIndex).getVods();
+        int size = null == vods ? 0 : vods.size();
+        if (currentChannelIndex < 0) {
+            currentChannelIndex = 0;
+        }
+        if (currentChannelIndex >= size) {
+            currentChannelIndex = size > 0 ? size - 1 : 0;
+        }
     }
 
     protected void showToast(String text, Context context) {
@@ -403,26 +535,32 @@ public class LiveActivity extends BaseActivity {
         mWebView.setWebChromeClient(new WebChromeClient() {
             @Override
             public void onProgressChanged(WebView view, int newProgress) {
-                isMenuShow = false;
                 String url = view.getUrl();
                 try {
                     url = URLDecoder.decode(url, "UTF-8");
                 } catch (UnsupportedEncodingException ignore) {
                 }
-                LogUtil.i(TAG, "onProgressChangedX" + url);
+                LogUtil.i(TAG, "onProgressChanged " + newProgress + " " + url);
                 Vod vod = UpdateService.getByUrl(url);
                 if (null != vod) {
                     currentLive = vod;
-                    binding.liveName.setText(currentLive.getName() + " " + newProgress + "%");
+                    currentSourceIndex = UpdateService.sourceIndexOf(vod, url);
+                    binding.liveName.setText(vod.getName() + " " + newProgress + "%");
                 }
                 if (newProgress >= 100) {
-                    // 真实画面已加载完成：撤掉「加载中」遮罩，露出播放画面
+                    // 真实画面已经加载完成：撤掉「加载中」遮罩，露出播放画面
                     HistoryDaoX.updateChannel(thisContext, url);
+                    playingStarted = true;
+                    handler.removeMessages(MSG_LOAD_WATCHDOG);
                     hideLoading();
-                    handler.sendMessageDelayed(handler.obtainMessage(2, "noText"), 1000);
+                    handler.sendMessageDelayed(handler.obtainMessage(MSG_CLEAR_NAME, "noText"), 1000);
+                    handler.removeMessages(MSG_VIDEO_PROBE);
+                    handler.sendMessageDelayed(
+                            handler.obtainMessage(MSG_VIDEO_PROBE, loadGeneration, 0),
+                            VIDEO_PROBE_DELAY_MS);
                 } else if (newProgress > 12 && isLoadingShown) {
                     // 遮罩显示期间同步进度，让等待更有反馈
-                    updateLoadingText(null != currentLive ? currentLive.getName() : null, newProgress);
+                    updateLoadingText(loadingLabel(currentLive, currentSourceIndex), newProgress);
                 }
             }
 
@@ -478,28 +616,12 @@ public class LiveActivity extends BaseActivity {
         }
 
         if (isMenuShow) {
-            if (keyCode == KeyEvent.KEYCODE_BACK || keyCode == KeyEvent.KEYCODE_MENU
-                    || keyCode == KeyEvent.KEYCODE_TAB) {
-                hideMenu();
-                return true;
-            }
-            if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
-                int dir = keyCode == KeyEvent.KEYCODE_DPAD_LEFT ? -1 : 1;
-                if (focusInside(binding.sourceRow)) {
-                    switchSource(dir);
-                    return true;
-                }
-                if (focusInside(binding.prevProvinceArea) || focusInside(binding.nextProvinceArea)) {
-                    switchCategory(dir);
-                    return true;
-                }
-            }
-            return super.dispatchKeyEvent(event);
+            return dispatchMenuKey(keyCode, event);
         }
 
-        if (keyCode == KeyEvent.KEYCODE_MENU || keyCode == KeyEvent.KEYCODE_TAB) {
-            // 设置键：直接定位到「源」，方便切换播放源
-            showMenu(true);
+        if (keyCode == KeyEvent.KEYCODE_MENU || keyCode == KeyEvent.KEYCODE_TAB
+                || keyCode == KeyEvent.KEYCODE_SETTINGS) {
+            showMenu(false);
             return true;
         }
         if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) {
@@ -518,20 +640,64 @@ public class LiveActivity extends BaseActivity {
             return true;
         }
 
+        // 播放中左右键换源
         if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
-            return goNext("right");
+            switchSource(1);
+            return true;
         }
         if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
-            return goNext("left");
+            switchSource(-1);
+            return true;
         }
         if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
-            return goNext("down");
+            return nextChannel(1);
         }
         if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
-            return goNext("up");
+            return nextChannel(-1);
         }
         if (keyCode == KeyEvent.KEYCODE_BACK) {
             showExitDialog();
+            return true;
+        }
+        return super.dispatchKeyEvent(event);
+    }
+
+    /** 菜单打开时的按键：左右切栏、上下选择由 ListView 自己处理 */
+    private boolean dispatchMenuKey(int keyCode, KeyEvent event) {
+        // 用户真正按了键，之后的选择变化都要当真
+        syncingMenu = false;
+
+        if (keyCode == KeyEvent.KEYCODE_BACK || keyCode == KeyEvent.KEYCODE_TAB) {
+            hideMenu();
+            return true;
+        }
+        // 自己处理 OK 键，避免不同 ROM 对 ListView 的回车行为不一致
+        if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) {
+            if (focusInside(binding.channelList)) {
+                int position = binding.channelList.getSelectedItemPosition();
+                playChannel(position);
+                hideMenu();
+            } else if (focusInside(binding.categoryList)) {
+                int position = binding.categoryList.getSelectedItemPosition();
+                if (position >= 0) {
+                    currentCategoryIndex = position;
+                    currentChannelIndex = 0;
+                    refreshChannelList();
+                }
+                binding.channelList.requestFocus();
+            }
+            return true;
+        }
+        if (keyCode == KeyEvent.KEYCODE_MENU || keyCode == KeyEvent.KEYCODE_SETTINGS) {
+            toggleFavoriteOnFocused();
+            return true;
+        }
+        if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT && focusInside(binding.categoryList)) {
+            binding.channelList.requestFocus();
+            return true;
+        }
+        if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT && focusInside(binding.channelList)) {
+            binding.categoryList.requestFocus();
             return true;
         }
         return super.dispatchKeyEvent(event);
@@ -556,192 +722,285 @@ public class LiveActivity extends BaseActivity {
 
     // ------------------------------------------------------------------ 菜单
 
-    private void showMenu(boolean focusSource) {
-        if (provinces.isEmpty()) {
+    private void showMenu(boolean focusCategory) {
+        if (categories.isEmpty()) {
             ToastUtils.show(this, "频道数据加载中，请稍候", Toast.LENGTH_SHORT);
             return;
         }
         isMenuShow = true;
         binding.menuContainer.setVisibility(View.VISIBLE);
-
-        showSourceName();
-        showCurrentProvince(false);
-
-        binding.prevSourceArea.setOnClickListener(v -> switchSource(-1));
-        binding.nextSourceArea.setOnClickListener(v -> switchSource(1));
-        binding.prevProvinceArea.setOnClickListener(v -> switchCategory(-1));
-        binding.nextProvinceArea.setOnClickListener(v -> switchCategory(1));
-        binding.menuContainer.setOnClickListener(v -> hideMenu());
-
-        View target = focusSource ? binding.prevSourceArea : binding.channelList;
-        binding.channelList.setSelection(currentDetailIndex);
+        syncMenu();
+        View target = focusCategory ? binding.categoryList : binding.channelList;
         target.post(target::requestFocus);
+    }
+
+    /** 让菜单内容与当前分类 / 频道保持一致 */
+    private void syncMenu() {
+        if (categories.isEmpty()) {
+            return;
+        }
+        clampIndex();
+        // 灌数据期间 ListView 会回调 onItemSelected(0)，先屏蔽掉
+        syncingMenu = true;
+        binding.categoryList.setAdapter(categoryAdapter);
+        binding.channelList.setAdapter(channelAdapter);
+        binding.categoryList.setSelection(currentCategoryIndex);
+        refreshChannelList();
+        categoryAdapter.notifyDataSetChanged();
+        binding.channelList.setSelection(currentChannelIndex);
+    }
+
+    /** 右栏跟随选中的分类刷新 */
+    private void refreshChannelList() {
+        if (categories.isEmpty()) {
+            return;
+        }
+        clampIndex();
+        Live live = categories.get(currentCategoryIndex);
+        List<Vod> vods = live.getVods();
+        int size = null == vods ? 0 : vods.size();
+        int keep = currentChannelIndex;
+        binding.categoryTitle.setText(live.getName());
+        binding.categoryCount.setText(size + " 个频道");
+        channelAdapter.submit(vods);
+        binding.channelList.setSelection(keep);
+        currentChannelIndex = keep;
+        // 左栏的「当前分类」高亮要跟着一起刷新
+        categoryAdapter.notifyDataSetChanged();
+        updateSourceHint();
+    }
+
+    /** 右上角的「当前源 · 共 N 个源」提示 */
+    private void updateSourceHint() {
+        if (null == currentLive || null == binding.sourceHint) {
+            return;
+        }
+        List<Vod> sources = currentLive.getSources();
+        if (null == sources || sources.isEmpty()) {
+            binding.sourceHint.setText("");
+            return;
+        }
+        String label = sources.get(Math.min(currentSourceIndex, sources.size() - 1)).getName();
+        binding.sourceHint.setText(sources.size() > 1
+                ? label + " · 共 " + sources.size() + " 个源"
+                : label);
     }
 
     private void hideMenu() {
         binding.menuContainer.setVisibility(View.GONE);
         isMenuShow = false;
-        binding.menuContainer.setOnClickListener(null);
+        if (null != mWebView) {
+            mWebView.requestFocus();
+        }
+        binding.webviewWrapper.requestFocus();
     }
 
-    private void switchSource(int dir) {
-        if (sourceNames.size() <= 1) {
-            showSourceName();
+    /** 设置键：收藏 / 取消收藏选中的频道 */
+    private void toggleFavoriteOnFocused() {
+        Vod channel = focusedChannel();
+        if (null == channel) {
+            channel = currentLive;
+        }
+        if (null == channel) {
             return;
         }
-        sourceIndex = (sourceIndex + dir + sourceNames.size()) % sourceNames.size();
-        applySourceFilter();
-        locateCurrent();
-        showSourceName();
-        showCurrentProvince(false);
+        toggleFavorite(channel);
+        channelAdapter.notifyDataSetChanged();
     }
 
-    private void switchCategory(int dir) {
-        if (provinces.isEmpty()) {
+    private Vod focusedChannel() {
+        if (!focusInside(binding.channelList)) {
+            return null;
+        }
+        int position = binding.channelList.getSelectedItemPosition();
+        List<Vod> vods = currentChannelList();
+        if (position < 0 || position >= vods.size()) {
+            return null;
+        }
+        return vods.get(position);
+    }
+
+    private void toggleFavorite(Vod channel) {
+        if (null == channel || null == favoriteService) {
             return;
         }
-        currentProvinceIndex = (currentProvinceIndex + dir + provinces.size()) % provinces.size();
-        currentDetailIndex = 0;
-        showCurrentProvince(false);
-    }
-
-    private void showSourceName() {
-        if (sourceNames.isEmpty()) {
-            binding.sourceName.setText(SOURCE_ALL);
+        String url = UpdateService.cleanUrl(channel.getUrl());
+        if (null == url || url.isEmpty()) {
             return;
         }
-        String name = sourceNames.get(sourceIndex);
-        binding.sourceName.setText(SOURCE_ALL.equals(name) ? name : ("源 · " + name));
-    }
-
-    private void showCurrentProvince(boolean focusList) {
-        if (provinces.isEmpty()) {
-            binding.provinceName.setText("暂无频道");
-            setupChannelList(new ArrayList<>(), focusList);
-            return;
-        }
-        clampIndex();
-        Live currentProvince = provinces.get(currentProvinceIndex);
-        List<Vod> vods = currentProvince.getVods();
-        binding.provinceName.setText(currentProvince.getName() + "(" + vods.size() + ")");
-        setupChannelList(vods, focusList);
-    }
-
-    private void setupChannelList(List<Vod> channels, boolean focusList) {
-        ArrayAdapter<Vod> adapter = new ArrayAdapter<Vod>(this, android.R.layout.simple_list_item_1, channels) {
-            @NonNull
-            @Override
-            public View getView(int position, @Nullable View convertView, @NonNull ViewGroup parent) {
-                Button btn;
-                if (convertView == null) {
-                    btn = new Button(getContext());
-                    btn.setLayoutParams(new AbsListView.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                            ViewGroup.LayoutParams.WRAP_CONTENT));
-                    btn.setTextColor(Color.WHITE);
-                    btn.setTextSize(16);
-                    btn.setPadding(24, 16, 24, 16);
-                    btn.setBackgroundResource(R.drawable.menu_button_background);
-                    btn.setClickable(false);
-                    btn.setFocusable(false);
-                } else {
-                    btn = (Button) convertView;
-                    if (!(btn.getLayoutParams() instanceof AbsListView.LayoutParams)) {
-                        btn.setLayoutParams(new AbsListView.LayoutParams(
-                                ViewGroup.LayoutParams.MATCH_PARENT,
-                                ViewGroup.LayoutParams.WRAP_CONTENT));
-                    }
-                }
-                Vod channel = getItem(position);
-                if (null != channel) {
-                    boolean isCurrent = null != currentLive
-                            && channel.getUrl() != null
-                            && channel.getUrl().equals(currentLive.getUrl());
-                    btn.setText((isCurrent ? "▶ " : "") + channel.getName());
-                }
-                return btn;
-            }
-        };
-        binding.channelList.setAdapter(adapter);
-        binding.channelList.setOnItemClickListener((parent, view, position, id) -> {
-            if (position < 0 || position >= channels.size()) {
-                return;
-            }
-            Vod channel = channels.get(position);
-            currentDetailIndex = position;
-            playChannel(channel);
-            hideMenu();
-        });
-        binding.channelList.setSelection(currentDetailIndex);
-        if (focusList) {
-            binding.channelList.post(() -> binding.channelList.requestFocus());
-        }
-    }
-
-    // ------------------------------------------------------------------ 收藏 / 数字键
-
-    private void toggleFavorite(Vod vod) {
-        if (null == vod) {
-            return;
-        }
-        if (favoriteService.isFavorite(vod.getUrl())) {
-            favoriteService.removeFavorite(vod.getUrl());
-            ToastUtils.show(this, "已取消收藏：" + vod.getName(), Toast.LENGTH_SHORT);
+        String name = displayNameOf(channel);
+        if (favoriteService.isFavorite(url)) {
+            favoriteService.removeFavorite(url);
+            ToastUtils.show(this, "已取消收藏：" + name, Toast.LENGTH_SHORT);
         } else {
-            favoriteService.addFavorite(vod);
-            ToastUtils.show(this, "已收藏：" + vod.getName(), Toast.LENGTH_SHORT);
+            Vod target = new Vod();
+            target.setName(name);
+            target.setUrl(url);
+            favoriteService.addFavorite(target);
+            ToastUtils.show(this, "已收藏：" + name, Toast.LENGTH_SHORT);
         }
         initData();
     }
 
-    private final StringBuilder digitBuffer = new StringBuilder();
-    private final Handler digitInputHandler = new Handler(Looper.getMainLooper());
-    private static final int DIGIT_TIMEOUT_MS = 1000;
-    private final Runnable commitDigitRunnable = new Runnable() {
+    /** 去掉收藏条目上「1.」这样的序号前缀 */
+    private String displayNameOf(Vod channel) {
+        String name = channel.getName();
+        if (null == name) {
+            return "";
+        }
+        return name.replaceFirst("^[0-9]+\\.[ \u3000]*", "");
+    }
+
+    private void updateFavoriteButtonInDialog() {
+        if (null != currentLive && null != favoriteService
+                && favoriteService.isFavorite(currentLive.getUrl())) {
+            exitDialogBinding.btnFavorite.setText("取消收藏当前频道");
+        } else {
+            exitDialogBinding.btnFavorite.setText("收藏当前频道");
+        }
+    }
+
+    // ------------------------------------------------------------------ 列表适配器
+
+    private final CategoryAdapter categoryAdapter = new CategoryAdapter();
+    private final ChannelAdapter channelAdapter = new ChannelAdapter();
+
+    private class CategoryAdapter extends BaseAdapter {
         @Override
-        public void run() {
-            String s = digitBuffer.toString();
-            digitBuffer.setLength(0);
-            if (s.isEmpty()) {
+        public int getCount() {
+            return categories.size();
+        }
+
+        @Override
+        public Object getItem(int position) {
+            return categories.get(position);
+        }
+
+        @Override
+        public long getItemId(int position) {
+            return position;
+        }
+
+        @Override
+        public View getView(int position, View convertView, ViewGroup parent) {
+            if (null == convertView) {
+                convertView = LayoutInflater.from(LiveActivity.this)
+                        .inflate(R.layout.item_live_category, parent, false);
+            }
+            Live live = categories.get(position);
+            View bar = convertView.findViewById(R.id.catBar);
+            TextView name = convertView.findViewById(R.id.catName);
+            TextView count = convertView.findViewById(R.id.catCount);
+            List<Vod> vods = live.getVods();
+            int size = null == vods ? 0 : vods.size();
+            boolean active = position == currentCategoryIndex;
+            name.setText(live.getName());
+            count.setText(size + "");
+            bar.setVisibility(active ? View.VISIBLE : View.INVISIBLE);
+            name.setTextColor(active ? 0xFFFFFFFF : 0xFFC7CEDB);
+            return convertView;
+        }
+    }
+
+    private class ChannelAdapter extends BaseAdapter {
+        private List<Vod> vods = new ArrayList<>();
+
+        void submit(List<Vod> list) {
+            vods = (null == list) ? new ArrayList<Vod>() : list;
+            notifyDataSetChanged();
+        }
+
+        @Override
+        public int getCount() {
+            return vods.size();
+        }
+
+        @Override
+        public Object getItem(int position) {
+            return vods.get(position);
+        }
+
+        @Override
+        public long getItemId(int position) {
+            return position;
+        }
+
+        @Override
+        public View getView(int position, View convertView, ViewGroup parent) {
+            if (null == convertView) {
+                convertView = LayoutInflater.from(LiveActivity.this)
+                        .inflate(R.layout.item_live_channel, parent, false);
+            }
+            Vod channel = vods.get(position);
+            TextView marker = convertView.findViewById(R.id.chMarker);
+            TextView name = convertView.findViewById(R.id.chName);
+            TextView sourceCount = convertView.findViewById(R.id.chSources);
+            TextView heart = convertView.findViewById(R.id.chHeart);
+
+            boolean playing = sameChannel(channel, currentLive);
+            marker.setVisibility(playing ? View.VISIBLE : View.INVISIBLE);
+            name.setText(displayNameOf(channel));
+            name.setTextColor(playing ? 0xFFFFB37A : 0xFFEDF0F5);
+
+            int total = channel.sourceCount();
+            if (total > 1) {
+                sourceCount.setVisibility(View.VISIBLE);
+                sourceCount.setText(total + " 源");
+            } else {
+                sourceCount.setVisibility(View.GONE);
+            }
+
+            boolean favorite = null != favoriteService
+                    && favoriteService.isFavorite(UpdateService.cleanUrl(channel.getUrl()));
+            heart.setText(favorite ? "♥" : "♡");
+            heart.setTextColor(favorite ? 0xFFFF6B81 : 0x668C94A3);
+            return convertView;
+        }
+    }
+
+    private void setupListListeners() {
+        binding.categoryList.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                if (syncingMenu || position == currentCategoryIndex || position < 0
+                        || position >= categories.size()) {
+                    return;
+                }
+                currentCategoryIndex = position;
+                currentChannelIndex = 0;
+                refreshChannelList();
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+            }
+        });
+        binding.categoryList.setOnItemClickListener((parent, view, position, id) -> {
+            if (position < 0 || position >= categories.size()) {
                 return;
             }
-            try {
-                jumpToFavoriteByNumber(Integer.parseInt(s));
-            } catch (NumberFormatException ignore) {
+            currentCategoryIndex = position;
+            currentChannelIndex = 0;
+            refreshChannelList();
+            binding.channelList.requestFocus();
+        });
+        binding.channelList.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                if (syncingMenu) {
+                    return;
+                }
+                currentChannelIndex = position;
             }
-        }
-    };
 
-    private boolean isDigitKey(int keyCode) {
-        return keyCode >= KeyEvent.KEYCODE_0 && keyCode <= KeyEvent.KEYCODE_9;
-    }
-
-    private char digitFromKeyCode(int keyCode) {
-        return (char) ('0' + (keyCode - KeyEvent.KEYCODE_0));
-    }
-
-    /** 数字键跳到「收藏」分组的第 N 个频道并播放 */
-    private void jumpToFavoriteByNumber(int num) {
-        Live favoriteLive = null;
-        int tagIndex = -1;
-        for (int i = 0; i < provinces.size(); i++) {
-            if ("favorite".equals(provinces.get(i).getTag())) {
-                favoriteLive = provinces.get(i);
-                tagIndex = i;
-                break;
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
             }
-        }
-        if (null == favoriteLive || null == favoriteLive.getVods()) {
-            return;
-        }
-        int idx = num - 1;
-        if (idx < 0 || idx >= favoriteLive.getVods().size()) {
-            return;
-        }
-        currentProvinceIndex = tagIndex;
-        currentDetailIndex = idx;
-        showToast(favoriteLive.getVods().get(idx).getName(), this);
-        playChannel(favoriteLive.getVods().get(idx));
+        });
+        binding.channelList.setOnItemClickListener((parent, view, position, id) -> {
+            playChannel(position);
+            hideMenu();
+        });
     }
 
     // ------------------------------------------------------------------ 退出对话框
@@ -758,15 +1017,6 @@ public class LiveActivity extends BaseActivity {
         setupHzListInExit();
         updateFavoriteButtonInDialog();
         exitDialogBinding.btnCancel.post(() -> exitDialogBinding.btnCancel.requestFocus());
-    }
-
-    private void updateFavoriteButtonInDialog() {
-        if (null != currentLive && null != favoriteService
-                && favoriteService.isFavorite(currentLive.getUrl())) {
-            exitDialogBinding.btnFavorite.setText("取消收藏当前频道");
-        } else {
-            exitDialogBinding.btnFavorite.setText("收藏当前频道");
-        }
     }
 
     private void hideExitDialog() {
@@ -806,6 +1056,52 @@ public class LiveActivity extends BaseActivity {
     private void toHome() {
         startActivity(new Intent(this, HomeActivity.class));
         finish();
+    }
+
+    // ------------------------------------------------------------------ 数字键
+
+    private final StringBuilder digitBuffer = new StringBuilder();
+    private final Handler digitInputHandler = new Handler(Looper.getMainLooper());
+    private static final int DIGIT_TIMEOUT_MS = 1000;
+    private final Runnable commitDigitRunnable = new Runnable() {
+        @Override
+        public void run() {
+            String s = digitBuffer.toString();
+            digitBuffer.setLength(0);
+            if (s.isEmpty()) {
+                return;
+            }
+            try {
+                jumpToFavoriteByNumber(Integer.parseInt(s));
+            } catch (NumberFormatException ignore) {
+            }
+        }
+    };
+
+    private boolean isDigitKey(int keyCode) {
+        return keyCode >= KeyEvent.KEYCODE_0 && keyCode <= KeyEvent.KEYCODE_9;
+    }
+
+    private char digitFromKeyCode(int keyCode) {
+        return (char) ('0' + (keyCode - KeyEvent.KEYCODE_0));
+    }
+
+    /** 数字键跳到「收藏」分组的第 N 个频道并播放 */
+    private void jumpToFavoriteByNumber(int num) {
+        for (int i = 0; i < categories.size(); i++) {
+            if (!"favorite".equals(categories.get(i).getTag())) {
+                continue;
+            }
+            List<Vod> vods = categories.get(i).getVods();
+            int idx = num - 1;
+            if (null == vods || idx < 0 || idx >= vods.size()) {
+                return;
+            }
+            currentCategoryIndex = i;
+            currentChannelIndex = idx;
+            playChannel(idx);
+            return;
+        }
     }
 
     // ------------------------------------------------------------------ 画质（页面提供时）
@@ -858,7 +1154,7 @@ public class LiveActivity extends BaseActivity {
             if (item.getAction() != null && item.getAction().trim().length() > 0) {
                 Util.evalOnUi(mWebView, item.getAction());
             } else if (item.getId() != null) {
-                String js = "$$(\\\"#" + item.getId() + "\\\").click()";
+                String js = "$$(\"#" + item.getId() + "\").click()";
                 Util.evalOnUi(mWebView, js);
             }
         }
@@ -876,6 +1172,18 @@ public class LiveActivity extends BaseActivity {
         loadingDots = binding.loadingDots;
         loadingName = binding.loadingName;
         buildLoadingDots();
+        setupListListeners();
+    }
+
+    @Override
+    protected void onDestroy() {
+        handler.removeCallbacksAndMessages(null);
+        digitInputHandler.removeCallbacksAndMessages(null);
+        for (ObjectAnimator animator : dotAnimators) {
+            animator.cancel();
+        }
+        dotAnimators.clear();
+        super.onDestroy();
     }
 
     // ------------------------------------------------------------ 加载中动画实现
@@ -918,17 +1226,17 @@ public class LiveActivity extends BaseActivity {
     }
 
     /** 显示加载遮罩；已显示时只更新文案，不重复入场动画 */
-    private void showLoading(String channelName) {
+    private void showLoading(String label) {
         if (null == loadingOverlay) {
             return;
         }
         if (isLoadingShown) {
-            updateLoadingText(channelName, -1);
+            updateLoadingText(label, -1);
             return;
         }
         isLoadingShown = true;
         loadingShownAt = System.currentTimeMillis();
-        updateLoadingText(channelName, -1);
+        updateLoadingText(label, -1);
         loadingOverlay.setVisibility(View.VISIBLE);
         loadingOverlay.setAlpha(0f);
         loadingOverlay.animate().alpha(1f).setDuration(180L).start();
@@ -936,8 +1244,8 @@ public class LiveActivity extends BaseActivity {
             animator.start();
         }
         // 兜底：超时后强制收起，避免永远停在加载态
-        handler.removeMessages(3);
-        handler.sendMessageDelayed(handler.obtainMessage(3), LOADING_TIMEOUT_MS);
+        handler.removeMessages(MSG_LOADING_TIMEOUT);
+        handler.sendMessageDelayed(handler.obtainMessage(MSG_LOADING_TIMEOUT), LOADING_TIMEOUT_MS);
     }
 
     /** 隐藏加载遮罩；为保证不「闪一下」，至少展示 LOADING_MIN_MS */
@@ -947,18 +1255,12 @@ public class LiveActivity extends BaseActivity {
         }
         long wait = LOADING_MIN_MS - (System.currentTimeMillis() - loadingShownAt);
         if (wait > 0) {
-            handler.postDelayed(hideLoadingRunnable, wait);
+            handler.removeMessages(MSG_HIDE_LOADING);
+            handler.sendMessageDelayed(handler.obtainMessage(MSG_HIDE_LOADING), wait);
             return;
         }
         doHideLoading();
     }
-
-    private final Runnable hideLoadingRunnable = new Runnable() {
-        @Override
-        public void run() {
-            doHideLoading();
-        }
-    };
 
     /** 立即淡出加载遮罩并停止圆点动画 */
     private void doHideLoading() {
@@ -966,7 +1268,8 @@ public class LiveActivity extends BaseActivity {
             return;
         }
         isLoadingShown = false;
-        handler.removeMessages(3);
+        handler.removeMessages(MSG_LOADING_TIMEOUT);
+        handler.removeMessages(MSG_HIDE_LOADING);
         for (ObjectAnimator animator : dotAnimators) {
             animator.cancel();
         }
@@ -981,15 +1284,15 @@ public class LiveActivity extends BaseActivity {
     }
 
     /** 更新加载文案；progress 传负数表示不带百分比 */
-    private void updateLoadingText(String channelName, int progress) {
+    private void updateLoadingText(String label, int progress) {
         if (null == loadingName) {
             return;
         }
-        String name = (null == channelName || channelName.isEmpty()) ? "频道" : channelName;
+        String text = (null == label || label.isEmpty()) ? "频道" : label;
         if (progress < 0) {
-            loadingName.setText("正在加载 " + name + " …");
+            loadingName.setText("正在加载 " + text + " …");
         } else {
-            loadingName.setText("正在加载 " + name + " … " + progress + "%");
+            loadingName.setText("正在加载 " + text + " … " + progress + "%");
         }
     }
 

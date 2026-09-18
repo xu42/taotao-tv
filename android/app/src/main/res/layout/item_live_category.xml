@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 切台菜单左栏：一个频道分类（收藏 / 央视 / 卫视 / 河南 …） -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="54dp"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:paddingLeft="24dp"
+    android:paddingRight="22dp">
+
+    <View
+        android:id="@+id/catBar"
+        android:layout_width="3dp"
+        android:layout_height="22dp"
+        android:layout_marginRight="13dp"
+        android:background="#FF8A3D"
+        android:visibility="invisible" />
+
+    <TextView
+        android:id="@+id/catName"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:singleLine="true"
+        android:ellipsize="end"
+        android:textColor="#C7CEDB"
+        android:textSize="19sp" />
+
+    <TextView
+        android:id="@+id/catCount"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginLeft="10dp"
+        android:textColor="#6B7385"
+        android:textSize="14sp" />
+</LinearLayout>
