@@ -186,6 +186,17 @@ cd android
 
 本工程是纯 Java + 内置网页，**没有任何 `.so`**，拆分 ABI 不会带来任何体积收益，所以固定只出一个通用包。
 
+### 签名（正式发版必做）
+没有密钥时 `assembleRelease` 会回退到 debug 签名，包能装但**每次构建签名都不同**，用户无法覆盖升级。
+生成正式密钥库（一次生成、终身使用）：
+
+```bash
+./scripts/gen-keystore.sh          # 交互式，生成 android/keystore/release.jks
+                                   # 并写好 local.properties，最后打印 GitHub Secrets 需要的 base64
+```
+
+完整说明（含 GitHub Secrets 配置、备份要求、常见问题）见 **[docs/签名与发布.md](../docs/签名与发布.md)**。
+
 ### 版本号（按编译时间自动生成）
 不再写死，默认取编译那一刻：
 - `versionName` = `yyyyMMdd.HHmm`（精确到分钟，APK 文件名也会带上）
