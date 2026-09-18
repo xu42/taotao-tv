@@ -20,6 +20,7 @@ import tv.utao.x5.domain.Res;
 import tv.utao.x5.domain.live.DataWrapper;
 import tv.utao.x5.domain.live.Live;
 import tv.utao.x5.domain.live.Vod;
+import tv.utao.x5.util.AppConfig;
 import tv.utao.x5.util.FileUtil;
 import tv.utao.x5.util.HttpUtil;
 import tv.utao.x5.util.JsonUtil;
@@ -86,6 +87,8 @@ public class UpdateService {
         for (Live life : lives) {
             j=0;
             for (Vod vod : life.getVods()) {
+                // 频道地址里的应用的伪源统一收敛到当前配置，避免依赖固定的旧域名
+                vod.setUrl(AppConfig.normalizeUrl(vod.getUrl()));
                 vod.setTagIndex(i);
                 vod.setDetailIndex(j);
                 String key= i+"_"+j;
@@ -152,6 +155,39 @@ public class UpdateService {
     
     public static List<Live> getByLives(){
         return newLives;
+    }
+
+    /**
+     * 默认频道：CCTV-1 综合。
+     * 优先取「央视」分组里的央视网源，找不到再到全量数据里按名字找，
+     * 最后才退回第一条数据，保证任何数据情况下都有可播的频道。
+     */
+    public static Vod getDefaultChannel(){
+        Vod fallback = null;
+        for (Live live : newLives) {
+            for (Vod vod : live.getVods()) {
+                if (isCctv1(vod.getName())) {
+                    if ("cctv".equals(live.getTag())) {
+                        return vod;
+                    }
+                    if (null == fallback) {
+                        fallback = vod;
+                    }
+                }
+            }
+        }
+        if (null != fallback) {
+            return fallback;
+        }
+        return getByKey("0_0");
+    }
+
+    private static boolean isCctv1(String name){
+        if(null==name){
+            return false;
+        }
+        String n = name.replace(" ", "").replace("-", "").toUpperCase();
+        return n.startsWith("CCTV1");
     }
     public static Vod getByKey(String key){
         return indexVodMap.get(key);

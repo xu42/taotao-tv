@@ -1,18 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Background color or gradient for TV banner (16:9). Replace as needed. -->
+    <!-- 电视端 Launcher 横幅（16:9） -->
     <item>
         <shape android:shape="rectangle">
-            <solid android:color="#FFFFFFFF"/>
+            <gradient
+                android:angle="315"
+                android:centerColor="#1B2230"
+                android:endColor="#0C0E12"
+                android:startColor="#131722"
+                android:type="linear" />
         </shape>
     </item>
 
-    <!-- Centered app mark; using existing mipmap foreground as a placeholder. -->
     <item
         android:gravity="center"
         android:width="144dp"
         android:height="144dp"
-        android:drawable="@mipmap/ic_launcher_foreground"/>
+        android:drawable="@mipmap/ic_launcher_foreground" />
 </layer-list>
-
-

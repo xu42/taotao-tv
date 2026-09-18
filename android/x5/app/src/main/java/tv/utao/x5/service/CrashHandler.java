@@ -18,6 +18,7 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 
 import tv.utao.x5.MyApplication;
+import tv.utao.x5.util.AppConfig;
 import tv.utao.x5.util.FileUtil;
 import tv.utao.x5.util.HttpUtil;
 import tv.utao.x5.util.JsonUtil;
@@ -262,8 +263,8 @@ public class CrashHandler implements UncaughtExceptionHandler {
                 }
 
                 try {
-                    HttpUtil.postJson("http://api.vonchange.com/utao/error", null, errLog);
-                    LogUtil.i("POST", "http://api.vonchange.com/utao/error");
+                    HttpUtil.postJson(AppConfig.CRASH_URL, null, errLog);
+                    LogUtil.i("POST", AppConfig.CRASH_URL);
                     // 成功后删除该文件
                     //noinspection ResultOfMethodCallIgnored
                     f.delete();

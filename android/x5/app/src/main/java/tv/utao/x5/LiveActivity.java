@@ -31,21 +31,23 @@ import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 import tv.utao.x5.call.StringCallback;
 import tv.utao.x5.dao.HistoryDaoX;
 import tv.utao.x5.databinding.ActivityLiveBinding;
+import tv.utao.x5.databinding.DialogExitBinding;
 import tv.utao.x5.databinding.ItemHzLiveBinding;
 import tv.utao.x5.domain.HzItem;
-import tv.utao.x5.databinding.DialogExitBinding;
-import tv.utao.x5.domain.live.DataWrapper;
-import tv.utao.x5.impl.BaseBindingAdapter;
-import tv.utao.x5.impl.BaseViewHolder;
 import tv.utao.x5.domain.live.Live;
 import tv.utao.x5.domain.live.Vod;
+import tv.utao.x5.impl.BaseBindingAdapter;
+import tv.utao.x5.impl.BaseViewHolder;
 import tv.utao.x5.impl.WebViewClientImpl;
 import tv.utao.x5.impl.X5WebChromeClientExtension;
 import tv.utao.x5.service.FavoriteService;
@@ -55,182 +57,435 @@ import tv.utao.x5.util.HttpUtil;
 import tv.utao.x5.util.JsonUtil;
 import tv.utao.x5.util.LogUtil;
 import tv.utao.x5.util.Util;
-import tv.utao.x5.util.ValueUtil;
 import tv.utao.x5.utils.ToastUtils;
 
+/**
+ * 电视直播。
+ *
+ * - 进入即播放上一次看的频道，没有记录时播 CCTV-1
+ * - 上下左右：快速切台
+ * - 设置(MENU)键：打开频道菜单并定位到「源」，左右切换播放源
+ * - OK 键：打开频道菜单，定位到频道列表
+ * - 数字键：跳到收藏栏的第 N 个频道
+ */
 public class LiveActivity extends BaseActivity {
     protected String TAG = "LiveActivity";
 
     protected ActivityLiveBinding binding;
     private Context thisContext;
+
+    /** 当前播放的频道（静态保存，页面来回切换时保留） */
     private static Vod currentLive = null;
+
+    /** 全量直播数据（含收藏分组） */
+    private final List<Live> allLives = new ArrayList<>();
+    /** 按当前源站过滤后的分组，界面与导航都以它为准 */
     private List<Live> provinces = new ArrayList<>();
     private int currentProvinceIndex = 0;
+    private int currentDetailIndex = 0;
+
+    /** 源站列表：[0] 为「全部源」，其余按数据里的频道数量排序 */
+    private final List<String> sourceNames = new ArrayList<>();
+    private int sourceIndex = 0;
+
+    /** 把上游站点归到用户认得出来的名字 */
+    private static final String[][] SOURCE_RULES = {
+            {"tv.cctv.com", "央视网"},
+            {"yangshipin.cn", "央视频"},
+            {"mgtv.com", "芒果TV"},
+            {"youku.com", "优酷"},
+            {"iqiyi.com", "爱奇艺"},
+            {"le.com", "乐视"},
+            {"ixigua.com", "西瓜视频"},
+            {"bilibili.com", "哔哩哔哩"},
+    };
+    private static final String SOURCE_ALL = "全部源";
+    private static final String SOURCE_OTHER = "各地广电";
+
     private DialogExitBinding exitDialogBinding;
     private boolean isExitDialogShowing = false;
-    
-    // 添加收藏服务
+    private boolean isMenuShow = false;
+
     private FavoriteService favoriteService;
-    private boolean x5Ok(){
-        return "ok".equals(ValueUtil.getString(this,"x5","0"));
-    }
-
-
-
 
     @Override
     protected void createInit() {
         bind();
-        UpdateService.baseFolder= this.getFilesDir().getPath();
+        UpdateService.baseFolder = this.getFilesDir().getPath();
         UpdateService.updateRes(this);
         UpdateService.initTvData();
-        thisContext=this;
-        if(null==currentLive){
+        thisContext = this;
+        favoriteService = FavoriteService.getInstance(this);
+
+        if (null == currentLive) {
+            // 记忆上次看的频道；没有记录时默认 CCTV-1
             currentLive = HistoryDaoX.currentChannel(this);
-            //UpdateService.getByKey("0_0");
         }
-        if(null==currentLive){
-            ToastUtils.show(this,"获取数据错误 请重启",Toast.LENGTH_SHORT);
+        if (null == currentLive) {
+            ToastUtils.show(this, "频道数据加载失败，请检查网络后重试", Toast.LENGTH_SHORT);
             finish();
             return;
         }
+
         initData();
-        //更新数据
         initWebView();
         mWebView.requestFocus();
         binding.webviewWrapper.requestFocus();
-        //数据库获取最新数据
-        //String liveUrl= "https://tv.cctv.com/live/cctv13/";
+
         mWebView.loadUrl(currentLive.getUrl());
-        ToastUtils.show(this,"已支持遥控器上下左右可快速切台",Toast.LENGTH_SHORT);
+        ToastUtils.show(this, "已切到 " + currentLive.getName() + "，按设置键可切换源", Toast.LENGTH_SHORT);
     }
 
-    private long lastTime = 0;
-    protected void initWebViewClient() {
-        mWebView.setWebViewClient(new WebViewClientImpl(getBaseContext(),mWebView,1));
+    /** 后台加载频道数据，回主线程构建源站与列表 */
+    private void initData() {
+        new Thread(() -> {
+            List<Live> result = UpdateService.getByLivesWithFavorites(this);
+            runOnUiThread(() -> {
+                allLives.clear();
+                allLives.addAll(result);
+                buildSources();
+                applySourceFilter();
+                locateCurrent();
+                showSourceName();
+                showCurrentProvince(false);
+            });
+        }).start();
     }
-    // 在 Handler 对象中处理消息
-   private Handler  handler = new Handler(Looper.getMainLooper()) {
+
+    /** 统计各源站的频道数量，生成源站列表 */
+    private void buildSources() {
+        final Map<String, Integer> counter = new LinkedHashMap<>();
+        for (Live live : allLives) {
+            if ("favorite".equals(live.getTag())) {
+                continue;
+            }
+            for (Vod vod : live.getVods()) {
+                String name = sourceNameOf(vod.getUrl());
+                Integer old = counter.get(name);
+                counter.put(name, null == old ? 1 : old + 1);
+            }
+        }
+        List<Map.Entry<String, Integer>> entries = new ArrayList<>(counter.entrySet());
+        Collections.sort(entries, new Comparator<Map.Entry<String, Integer>>() {
+            @Override
+            public int compare(Map.Entry<String, Integer> a, Map.Entry<String, Integer> b) {
+                return b.getValue() - a.getValue();
+            }
+        });
+
+        sourceNames.clear();
+        sourceNames.add(SOURCE_ALL);
+        for (Map.Entry<String, Integer> entry : entries) {
+            sourceNames.add(entry.getKey());
+        }
+        if (sourceIndex >= sourceNames.size()) {
+            sourceIndex = 0;
+        }
+    }
+
+    private String sourceNameOf(String url) {
+        String host = hostOf(url);
+        for (String[] rule : SOURCE_RULES) {
+            if (host.contains(rule[0])) {
+                return rule[1];
+            }
+        }
+        return SOURCE_OTHER;
+    }
+
+    private String hostOf(String url) {
+        if (null == url) {
+            return "";
+        }
+        String u = url;
+        int scheme = u.indexOf("://");
+        if (scheme > 0) {
+            u = u.substring(scheme + 3);
+        }
+        int slash = u.indexOf('/');
+        if (slash > 0) {
+            u = u.substring(0, slash);
+        }
+        int colon = u.indexOf(':');
+        if (colon > 0) {
+            u = u.substring(0, colon);
+        }
+        return u;
+    }
+
+    /** 按当前源站重新构建分组（收藏分组始终保留） */
+    private void applySourceFilter() {
+        String wantSource = sourceNames.isEmpty() ? SOURCE_ALL : sourceNames.get(sourceIndex);
+        boolean all = SOURCE_ALL.equals(wantSource);
+
+        List<Live> filtered = new ArrayList<>();
+        for (Live live : allLives) {
+            if ("favorite".equals(live.getTag())) {
+                filtered.add(live);
+                continue;
+            }
+            List<Vod> vods = new ArrayList<>();
+            for (Vod vod : live.getVods()) {
+                if (all || wantSource.equals(sourceNameOf(vod.getUrl()))) {
+                    vods.add(vod);
+                }
+            }
+            if (vods.isEmpty()) {
+                continue;
+            }
+            Live group = new Live();
+            group.setName(live.getName());
+            group.setTag(live.getTag());
+            group.setIndex(live.getIndex());
+            group.setVods(vods);
+            filtered.add(group);
+        }
+        provinces = filtered;
+        clampIndex();
+    }
+
+    private void clampIndex() {
+        if (provinces.isEmpty()) {
+            currentProvinceIndex = 0;
+            currentDetailIndex = 0;
+            return;
+        }
+        if (currentProvinceIndex < 0) {
+            currentProvinceIndex = 0;
+        }
+        if (currentProvinceIndex >= provinces.size()) {
+            currentProvinceIndex = provinces.size() - 1;
+        }
+        List<Vod> vods = provinces.get(currentProvinceIndex).getVods();
+        if (currentDetailIndex >= vods.size()) {
+            currentDetailIndex = Math.max(0, vods.size() - 1);
+        }
+    }
+
+    /** 把当前正在播放的频道定位到（过滤后的）列表位置 */
+    private void locateCurrent() {
+        clampIndex();
+        if (null == currentLive) {
+            return;
+        }
+        for (int i = 0; i < provinces.size(); i++) {
+            List<Vod> vods = provinces.get(i).getVods();
+            for (int j = 0; j < vods.size(); j++) {
+                if (currentLive.getUrl() != null
+                        && currentLive.getUrl().equals(vods.get(j).getUrl())) {
+                    currentProvinceIndex = i;
+                    currentDetailIndex = j;
+                    return;
+                }
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------ 播放
+
+    private long lastTime = 0;
+
+    protected void initWebViewClient() {
+        mWebView.setWebViewClient(new WebViewClientImpl(getBaseContext(), mWebView, 1));
+    }
+
+    private Handler handler = new Handler(Looper.getMainLooper()) {
         @Override
         public void handleMessage(@NonNull Message msg) {
             super.handleMessage(msg);
             switch (msg.what) {
                 case 1:
-                    String messageContent = (String) msg.obj;
-                    // 处理接收到的消息（例如，显示 Toast）
-                    if(currentLive.getKey().equals(messageContent)){
-                        if (mWebView != null) {
-                            mWebView.loadUrl(currentLive.getUrl());
-                        }
-                        //记录到db
+                    String url = (String) msg.obj;
+                    if (null != currentLive && null != mWebView
+                            && null != url && url.equals(currentLive.getUrl())) {
+                        mWebView.loadUrl(url);
                     }
                     break;
                 case 2:
                     binding.liveName.setText("");
                     break;
+                default:
+                    break;
             }
         }
     };
-    /*
-    说明：我们使用 obtainMessage 方法创建消息，并将消息的内容（字符串）作为第二个参数。
-    */
-    private boolean goNext(String nextType){
-        if(null==currentLive){
-            currentLive = UpdateService.getByKey("0_0");
-        }
-        String key= UpdateService.liveNext(currentLive.getTagIndex(),currentLive.getDetailIndex(),nextType);
-        currentLive = UpdateService.getByKey(key);
-        if(null!=currentLive){
-            //延迟1s
-            showToast(currentLive.getName(),this);
-            String liveKey=currentLive.getKey();
-            handler.sendMessageDelayed (handler.obtainMessage(1, liveKey),1000);
 
+    /** 上下左右在「当前可见的」频道之间切换 */
+    private boolean goNext(String nextType) {
+        if (provinces.isEmpty()) {
+            return true;
         }
+        clampIndex();
+        List<Vod> vods = provinces.get(currentProvinceIndex).getVods();
+        if (vods.isEmpty()) {
+            return true;
+        }
+        int tag = currentProvinceIndex;
+        int detail = currentDetailIndex;
+        switch (nextType) {
+            case "up":
+                detail = (detail <= 0) ? vods.size() - 1 : detail - 1;
+                break;
+            case "down":
+                detail = (detail >= vods.size() - 1) ? 0 : detail + 1;
+                break;
+            case "left":
+                tag = (tag <= 0) ? provinces.size() - 1 : tag - 1;
+                detail = 0;
+                break;
+            case "right":
+                tag = (tag >= provinces.size() - 1) ? 0 : tag + 1;
+                detail = 0;
+                break;
+            default:
+                return true;
+        }
+        List<Vod> target = provinces.get(tag).getVods();
+        if (target.isEmpty()) {
+            return true;
+        }
+        if (detail >= target.size()) {
+            detail = 0;
+        }
+        currentProvinceIndex = tag;
+        currentDetailIndex = detail;
+        currentLive = target.get(detail);
+        showToast(currentLive.getName(), this);
+        handler.sendMessageDelayed(handler.obtainMessage(1, currentLive.getUrl()), 700);
         return true;
     }
-    protected   void showToast(String text, Context context){
-        binding.liveName.setText(text);
-        //showToastOrg(text,context);
+
+    private void playChannel(Vod channel) {
+        if (null == channel || null == channel.getUrl()) {
+            return;
+        }
+        currentLive = channel;
+        if (null != mWebView) {
+            mWebView.loadUrl(channel.getUrl());
+        }
+        ToastUtils.show(this, "已切到 " + channel.getName(), Toast.LENGTH_SHORT);
     }
 
+    protected void showToast(String text, Context context) {
+        binding.liveName.setText(text);
+    }
+
+    protected void initWebChromeClient() {
+        mWebView.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public void onProgressChanged(WebView view, int newProgress) {
+                isMenuShow = false;
+                String url = view.getUrl();
+                try {
+                    url = URLDecoder.decode(url, "UTF-8");
+                } catch (UnsupportedEncodingException ignore) {
+                }
+                LogUtil.i(TAG, "onProgressChangedX" + url);
+                Vod vod = UpdateService.getByUrl(url);
+                if (null != vod) {
+                    currentLive = vod;
+                    binding.liveName.setText(currentLive.getName() + " " + newProgress + "%");
+                }
+                if (newProgress == 100) {
+                    HistoryDaoX.updateChannel(thisContext, url);
+                    handler.sendMessageDelayed(handler.obtainMessage(2, "noText"), 1000);
+                }
+            }
+
+            @Override
+            public void onShowCustomView(View view, IX5WebChromeClient.CustomViewCallback callback) {
+                LogUtil.i("WebChromeClient", "onShowCustomView");
+                binding.fullscreen.addView(view);
+                binding.fullscreen.setVisibility(View.VISIBLE);
+            }
+
+            @Override
+            public void onPermissionRequest(PermissionRequest request) {
+                LogUtil.i("WebChromeClient", "onPermissionRequest " + request.getOrigin());
+                request.deny();
+            }
+
+            @Override
+            public void onHideCustomView() {
+                LogUtil.i("WebChromeClient", "onHideCustomView");
+                binding.fullscreen.removeAllViews();
+                binding.fullscreen.setVisibility(View.GONE);
+            }
+        });
+        mWebView.setWebChromeClientExtension(new X5WebChromeClientExtension());
+    }
+
+    @Override
+    protected void webviewSet(IX5WebSettingsExtension webSettingsExtension) {
+        webSettingsExtension.setPicModel(IX5WebSettingsExtension.PicModel_NoPic);
+    }
+
+    @Override
+    protected Object getJsInterface() {
+        return new JsInterface();
+    }
+
+    // ------------------------------------------------------------------ 按键
 
     public boolean dispatchTouchEvent(MotionEvent event) {
-        if(!isMenuShow()&&event.getAction() == KeyEvent.ACTION_DOWN){
-            showMenu();
+        if (!isMenuShow && event.getAction() == MotionEvent.ACTION_DOWN) {
+            showMenu(false);
             return true;
         }
         return super.dispatchTouchEvent(event);
     }
-    protected     boolean isMenuShow(){
-        int visible=  binding.menuContainer.getVisibility();
-        if(visible== View.VISIBLE){
-            return true;
-        }
-        return false;
-    }
+
     public boolean dispatchKeyEvent(KeyEvent event) {
         if (event.getAction() == KeyEvent.ACTION_UP) {
             return super.dispatchKeyEvent(event);
         }
         int keyCode = event.getKeyCode();
-        LogUtil.i("keyDown keyCode ", keyCode+" event" + event);
-        
-        // 优先处理退出对话框
-        if(isExitDialogShowing){
-            if(keyCode==KeyEvent.KEYCODE_BACK){
-                // 若当前设置为“启动即电视直播”，第二次返回跳转到 Main 页面
-                String currentStartPage = ValueUtil.getString(this, "startPage", "main");
-                if ("main".equals(currentStartPage)) {
-                    toHome();
-                } else {
-                    finish();
-                }
+
+        if (isExitDialogShowing) {
+            if (keyCode == KeyEvent.KEYCODE_BACK) {
+                hideExitDialog();
                 return true;
             }
-            // 退出对话框显示时，让系统处理上下键焦点切换
-            if(keyCode==KeyEvent.KEYCODE_DPAD_UP || keyCode==KeyEvent.KEYCODE_DPAD_DOWN){
-                return super.dispatchKeyEvent(event);
-            }
-            // 其他按键也交给系统处理（如确认键）
             return super.dispatchKeyEvent(event);
         }
 
-        boolean isMenuShow=isMenuShow();
-        if(isMenuShow){
-            if(keyCode==KeyEvent.KEYCODE_BACK||keyCode==KeyEvent.KEYCODE_MENU||keyCode==KeyEvent.KEYCODE_TAB){
+        if (isMenuShow) {
+            if (keyCode == KeyEvent.KEYCODE_BACK || keyCode == KeyEvent.KEYCODE_MENU
+                    || keyCode == KeyEvent.KEYCODE_TAB) {
                 hideMenu();
                 return true;
             }
             if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
-                if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
-                    currentProvinceIndex--;
-                    if (currentProvinceIndex < 0) {
-                        currentProvinceIndex = provinces.size() - 1;
-                    }
-                } else {
-                    currentProvinceIndex++;
-                    if (currentProvinceIndex >= provinces.size()) {
-                        currentProvinceIndex = 0;
-                    }
+                int dir = keyCode == KeyEvent.KEYCODE_DPAD_LEFT ? -1 : 1;
+                if (focusInside(binding.sourceRow)) {
+                    switchSource(dir);
+                    return true;
                 }
-                showCurrentProvince();
-                return true;
+                if (focusInside(binding.prevProvinceArea) || focusInside(binding.nextProvinceArea)) {
+                    switchCategory(dir);
+                    return true;
+                }
             }
             return super.dispatchKeyEvent(event);
         }
-        if(keyCode==KeyEvent.KEYCODE_MENU|| keyCode == KeyEvent.KEYCODE_TAB||keyCode==KeyEvent.KEYCODE_DPAD_CENTER||keyCode==KeyEvent.KEYCODE_ENTER){
-            showMenu();
+
+        if (keyCode == KeyEvent.KEYCODE_MENU || keyCode == KeyEvent.KEYCODE_TAB) {
+            // 设置键：直接定位到「源」，方便切换播放源
+            showMenu(true);
+            return true;
+        }
+        if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) {
+            showMenu(false);
             return true;
         }
 
-        // 数字键缓冲：支持多位数字组合（如 12、108），1秒未继续输入则跳转
         if (isDigitKey(keyCode)) {
             digitInputHandler.removeCallbacks(commitDigitRunnable);
             digitBuffer.append(digitFromKeyCode(keyCode));
             try {
                 ToastUtils.show(this, "输入: " + digitBuffer.toString(), Toast.LENGTH_SHORT);
-            } catch (Throwable ignore) {}
+            } catch (Throwable ignore) {
+            }
             digitInputHandler.postDelayed(commitDigitRunnable, DIGIT_TIMEOUT_MS);
             return true;
         }
@@ -248,503 +503,103 @@ public class LiveActivity extends BaseActivity {
             return goNext("up");
         }
         if (keyCode == KeyEvent.KEYCODE_BACK) {
-            handleBackPress();
+            showExitDialog();
             return true;
         }
         return super.dispatchKeyEvent(event);
     }
 
-    private void handleBackPress(){
-        // 不再显示悬浮画质层，直接处理退出
-        // 如果退出对话框已显示，再次按返回键则退出
-        if (isExitDialogShowing) {
-            // 若当前设置为“启动即电视直播”，第二次返回跳转到 Main 页面
-            String currentStartPage = ValueUtil.getString(this, "startPage", "main");
-            if ("live".equals(currentStartPage)) {
-                toHome();
-            } else {
-                finish();
+    private boolean focusInside(View group) {
+        if (null == group) {
+            return false;
+        }
+        View focus = getCurrentFocus();
+        while (null != focus) {
+            if (focus == group) {
+                return true;
             }
+            if (!(focus.getParent() instanceof View)) {
+                return false;
+            }
+            focus = (View) focus.getParent();
+        }
+        return false;
+    }
+
+    // ------------------------------------------------------------------ 菜单
+
+    private void showMenu(boolean focusSource) {
+        if (provinces.isEmpty()) {
+            ToastUtils.show(this, "频道数据加载中，请稍候", Toast.LENGTH_SHORT);
             return;
         }
-        // 显示退出对话框
-        showExitDialog();
-    }
-    
-    private void toHome(){
-        Intent intent = new Intent(this, MainActivity.class);
-        startActivity(intent);
-        finish();
-    }
-    
-    private void showExitDialog() {
-        if (exitDialogBinding == null) {
-            initExitDialog();
-        }
-        isExitDialogShowing = true;
-        exitDialogBinding.exitDialogContainer.setVisibility(View.VISIBLE);
-        // 初始化退出对话框中的画质列表（模拟）
-        setupHzListInExit();
-        
-        // 设置对话框中按钮的焦点
-        exitDialogBinding.btnFavorite.setFocusable(true);
-        exitDialogBinding.btnCancel.setFocusable(true);
-        exitDialogBinding.btnStartToggle.setFocusable(true);
-        
-        // 更新收藏按钮状态
-        updateFavoriteButtonInDialog();
-        
-        // 设置启动按钮文案（启动XX），不再显示上下提示文字
-        String currentStartPage = ValueUtil.getString(this, "startPage", "main");
-        if ("main".equals(currentStartPage)) {
-            exitDialogBinding.btnStartToggle.setText("启动即电视直播");
-        } else {
-            exitDialogBinding.btnStartToggle.setText("启动即视频点播");
-        }
-        
-        // 根据当前X5开关状态：已开启则隐藏按钮；未开启则显示“开启X5内核(会关闭应用)”
-        try {
-            if (x5Ok()) {
-                exitDialogBinding.btnOpenX5.setVisibility(View.GONE);
-            } else {
-                exitDialogBinding.btnOpenX5.setVisibility(View.VISIBLE);
-                exitDialogBinding.btnOpenX5.setText("开启X5内核(会关闭应用)");
-            }
-        } catch (Throwable ignore) {}
+        isMenuShow = true;
+        binding.menuContainer.setVisibility(View.VISIBLE);
 
-        // 自启动按钮文案（保留逻辑，但按钮已隐藏）
-        try {
-            String autoStart = ValueUtil.getString(this, "autoStart", "0");
-            if ("1".equals(autoStart)) {
-                exitDialogBinding.btnAutoStart.setText("关闭自启动");
-            } else {
-                exitDialogBinding.btnAutoStart.setText("开启自启动");
-            }
-            exitDialogBinding.btnAutoStart.setVisibility(View.GONE);
-        } catch (Throwable ignore) {}
+        showSourceName();
+        showCurrentProvince(false);
 
-        // 焦点链调整：启动 -> (X5 可见则到 X5) -> 画质列表 -> 收藏（自启动按钮隐藏）
-        try {
-            boolean x5Visible = exitDialogBinding.btnOpenX5.getVisibility() == View.VISIBLE;
-            if (x5Visible) {
-                exitDialogBinding.btnStartToggle.setNextFocusDownId(exitDialogBinding.btnOpenX5.getId());
-                exitDialogBinding.btnOpenX5.setNextFocusUpId(exitDialogBinding.btnStartToggle.getId());
-                exitDialogBinding.btnOpenX5.setNextFocusDownId(exitDialogBinding.hzListInExit.getId());
-            } else {
-                exitDialogBinding.btnStartToggle.setNextFocusDownId(exitDialogBinding.hzListInExit.getId());
-            }
-            // 兜底：如果画质列表为空，则从启动/X5直接到收藏
-            exitDialogBinding.hzListInExit.post(() -> {
-                try {
-                    androidx.recyclerview.widget.RecyclerView.Adapter<?> adapter = exitDialogBinding.hzListInExit.getAdapter();
-                    int count = adapter == null ? 0 : adapter.getItemCount();
-                    if (count == 0) {
-                        boolean x5VisibleInner = exitDialogBinding.btnOpenX5.getVisibility() == View.VISIBLE;
-                        if (x5VisibleInner) {
-                            // 空列表时：启动 -> 开启X5 -> 收藏；收藏上 -> 开启X5 -> 启动
-                            exitDialogBinding.btnStartToggle.setNextFocusDownId(exitDialogBinding.btnOpenX5.getId());
-                            exitDialogBinding.btnOpenX5.setNextFocusDownId(exitDialogBinding.btnFavorite.getId());
-                            exitDialogBinding.btnFavorite.setNextFocusUpId(exitDialogBinding.btnOpenX5.getId());
-                            // 确保开启X5向上回到启动按钮
-                            exitDialogBinding.btnOpenX5.setNextFocusUpId(exitDialogBinding.btnStartToggle.getId());
-                        } else {
-                            // 没有X5按钮：启动 -> 收藏；收藏上 -> 启动
-                            exitDialogBinding.btnStartToggle.setNextFocusDownId(exitDialogBinding.btnFavorite.getId());
-                            exitDialogBinding.btnFavorite.setNextFocusUpId(exitDialogBinding.btnStartToggle.getId());
-                        }
-                    }
-                } catch (Throwable ignore2) {}
-            });
-        } catch (Throwable ignore) {}
+        binding.prevSourceArea.setOnClickListener(v -> switchSource(-1));
+        binding.nextSourceArea.setOnClickListener(v -> switchSource(1));
+        binding.prevProvinceArea.setOnClickListener(v -> switchCategory(-1));
+        binding.nextProvinceArea.setOnClickListener(v -> switchCategory(1));
+        binding.menuContainer.setOnClickListener(v -> hideMenu());
 
-        // 设置启动按钮向下焦点到 X5，再到画质列表
-        try {
-            exitDialogBinding.btnStartToggle.setNextFocusDownId(exitDialogBinding.btnOpenX5.getId());
-            exitDialogBinding.btnOpenX5.setNextFocusDownId(exitDialogBinding.hzListInExit.getId());
-        } catch (Throwable ignore) {}
-
-        
-        // 默认焦点回到收藏按钮，避免按返回后焦点丢失
-        exitDialogBinding.btnFavorite.post(() -> exitDialogBinding.btnFavorite.requestFocus());
-
-        // 设置左侧二维码图片
-        try {
-            android.graphics.Bitmap bmp = android.graphics.BitmapFactory.decodeStream(getAssets().open("tv-web/img/myzsm.jpg"));
-            exitDialogBinding.qrDonate.setImageBitmap(bmp);
-        } catch (Throwable ignore) {}
+        View target = focusSource ? binding.prevSourceArea : binding.channelList;
+        binding.channelList.setSelection(currentDetailIndex);
+        target.post(target::requestFocus);
     }
-    
-    /**
-     * 更新对话框中收藏按钮的状态
-     */
-    private void updateFavoriteButtonInDialog() {
-        if (currentLive != null && favoriteService != null) {
-            if (favoriteService.isFavorite(currentLive.getUrl())) {
-                exitDialogBinding.btnFavorite.setText("取消收藏");
-            } else {
-                exitDialogBinding.btnFavorite.setText("收藏当前频道");
-            }
-        }
+
+    private void hideMenu() {
+        binding.menuContainer.setVisibility(View.GONE);
+        isMenuShow = false;
+        binding.menuContainer.setOnClickListener(null);
     }
-    
-    private void hideExitDialog() {
-        if (exitDialogBinding != null) {
-            isExitDialogShowing = false;
-            exitDialogBinding.exitDialogContainer.setVisibility(View.GONE);
-        }
-    }
-    
-    private void initExitDialog() {
-        View dialogView = findViewById(R.id.exitDialog);
-        exitDialogBinding = DataBindingUtil.bind(dialogView);
-        
-        if (exitDialogBinding == null) {
+
+    private void switchSource(int dir) {
+        if (sourceNames.size() <= 1) {
+            showSourceName();
             return;
         }
-        
-        // 收藏按钮
-        exitDialogBinding.btnFavorite.setOnClickListener(v -> {
-            if (currentLive != null) {
-                toggleFavorite(currentLive);
-                // 更新按钮状态
-                updateFavoriteButtonInDialog();
-                // 强制将焦点回到“收藏”按钮，避免被列表抢走
-                try {
-                    exitDialogBinding.btnFavorite.post(() -> exitDialogBinding.btnFavorite.requestFocus());
-                } catch (Throwable ignore) {}
-            }
-        });
-        
-        // 取消按钮
-        exitDialogBinding.btnCancel.setOnClickListener(v -> {
-            hideExitDialog();
-        });
-        
-        // 点击背景关闭对话框
-        exitDialogBinding.dialogBackdrop.setOnClickListener(v -> {
-            hideExitDialog();
-        });
-        
-        // 启动首页切换按钮（仅按钮，点击后切换并更新文案）
-        exitDialogBinding.btnStartToggle.setOnClickListener(v -> {
-            String currentStartPage = ValueUtil.getString(this, "startPage", "main");
-            if ("main".equals(currentStartPage)) {
-                // 当前是视频点播，切换到电视直播
-                ValueUtil.putString(this, "startPage", "live");
-                ToastUtils.show(this, "已设置启动首页为：电视直播", Toast.LENGTH_SHORT);
-                exitDialogBinding.btnStartToggle.setText("启动即视频点播");
-            } else {
-                // 当前是电视直播，切换到视频点播
-                ValueUtil.putString(this, "startPage", "main");
-                ToastUtils.show(this, "已设置启动首页为：视频点播", Toast.LENGTH_SHORT);
-                exitDialogBinding.btnStartToggle.setText("启动即电视直播");
-            }
-        });
-
-        // 开启X5按钮（无关闭功能）
-        exitDialogBinding.btnOpenX5.setOnClickListener(v -> {
-            ValueUtil.putString(getApplicationContext(), "openX5", "1");
-            ToastUtils.show(this, "已开启X5，将重启应用", Toast.LENGTH_SHORT);
-            finishAffinity();
-            System.exit(0);
-        });
-
-        // 开启自启动按钮（切换开关，也可进入设置页）
-        try {
-            exitDialogBinding.btnAutoStart.setOnClickListener(v -> {
-                String current = ValueUtil.getString(this, "autoStart", "0");
-                if ("1".equals(current)) {
-                    ValueUtil.putString(this, "autoStart", "0");
-                    exitDialogBinding.btnAutoStart.setText("开启自启动");
-                    ToastUtils.show(this, "已关闭自启动", Toast.LENGTH_SHORT);
-                } else {
-                    ValueUtil.putString(this, "autoStart", "1");
-                    exitDialogBinding.btnAutoStart.setText("关闭自启动");
-                    ToastUtils.show(this, "已开启自启动", Toast.LENGTH_SHORT);
-                }
-            });
-        } catch (Throwable ignore) {}
+        sourceIndex = (sourceIndex + dir + sourceNames.size()) % sourceNames.size();
+        applySourceFilter();
+        locateCurrent();
+        showSourceName();
+        showCurrentProvince(false);
     }
 
-    // 已移除设置页跳转，保留占位以避免方法引用丢失
-
-    protected static String  videoQualityData=null;
-    private void setupHzListInExit(){
-        // 构造模拟画质项
-        List<HzItem> hzItems=new ArrayList<>();
-        if(null!=videoQualityData){
-            hzItems=JsonUtil.fromJson(videoQualityData,new TypeToken<List<HzItem>>(){}.getType());
-        }
-        BaseBindingAdapter hzAdapter = new BaseBindingAdapter<HzItem, ItemHzLiveBinding>(hzItems,R.layout.item_hz_live) {
-            @Override
-            public void doBindViewHolder(BaseViewHolder<ItemHzLiveBinding> holder, HzItem item) {
-                holder.getBinding().setVariable(BR.item, item);
-                holder.getBinding().setVariable(BR.itemPresenter, ItemPresenter);
-            }
-        };
-        hzAdapter.setItemPresenter(new HzLiveBindPresenter());
-        exitDialogBinding.hzListInExit.setLayoutManager(new androidx.recyclerview.widget.LinearLayoutManager(this, androidx.recyclerview.widget.LinearLayoutManager.HORIZONTAL,false));
-        exitDialogBinding.hzListInExit.setAdapter(hzAdapter);
-        // 所有画质项的上下焦点跳转绑定（上->启动或X5按钮，下->收藏按钮）
-        exitDialogBinding.hzListInExit.addOnChildAttachStateChangeListener(new androidx.recyclerview.widget.RecyclerView.OnChildAttachStateChangeListener() {
-            @Override
-            public void onChildViewAttachedToWindow(View view) {
-                View btn = view.findViewById(R.id.hzItem);
-                if (btn != null) {
-                    if (btn.getId() == View.NO_ID) {
-                        btn.setId(View.generateViewId());
-                    }
-                    int upId = exitDialogBinding.btnOpenX5.getVisibility() == View.VISIBLE
-                            ? exitDialogBinding.btnOpenX5.getId()
-                            : exitDialogBinding.btnStartToggle.getId();
-                    btn.setNextFocusUpId(upId);
-                    btn.setNextFocusDownId(exitDialogBinding.btnFavorite.getId());
-                }
-            }
-            @Override
-            public void onChildViewDetachedFromWindow(View view) { }
-        });
-        // 布局完成后，连接焦点链路（不改变默认焦点）
-        exitDialogBinding.hzListInExit.post(() -> {
-            try {
-                androidx.recyclerview.widget.RecyclerView.ViewHolder vh = exitDialogBinding.hzListInExit.findViewHolderForAdapterPosition(0);
-                if (vh instanceof BaseViewHolder) {
-                    ItemHzLiveBinding b = (ItemHzLiveBinding) ((BaseViewHolder<?>) vh).getBinding();
-                    View first = b.hzItem;
-                    if (first.getId() == View.NO_ID) {
-                        first.setId(View.generateViewId());
-                    }
-            // 上下焦点：启动/X5 -> 画质第一项 -> 收藏按钮
-            int upId = exitDialogBinding.btnOpenX5.getVisibility() == View.VISIBLE
-                    ? exitDialogBinding.btnOpenX5.getId()
-                    : exitDialogBinding.btnStartToggle.getId();
-            exitDialogBinding.btnFavorite.setNextFocusUpId(first.getId());
-            first.setNextFocusUpId(upId);
-                    first.setNextFocusDownId(exitDialogBinding.btnFavorite.getId());
-                    // 不改变默认焦点
-                }
-            } catch (Exception ignore) {}
-        });
-    }
-    
-    
-
-    private void bind(){
-        binding = DataBindingUtil.setContentView(this, R.layout.activity_live);
-        //binding.setMenuTitleHandler(new BaseWebViewActivity.MenuTitleHandler());
-        ViewGroup container = binding.webviewWrapper;
-        container.addView(mWebView, new ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT));
-       // lWebView=binding.webView;
-        //focusChange();
-    }
-
-
-    protected void initWebChromeClient() {
-        mWebView.setWebChromeClient(new WebChromeClient() {
-            @Override
-            public void onProgressChanged(WebView view, int newProgress) {
-                isMenuShow=false;
-                String url= view.getUrl();
-                try {
-                    url=  URLDecoder.decode(url, "UTF-8");
-                } catch (UnsupportedEncodingException e) {
-                }
-                LogUtil.i(TAG,"onProgressChangedX"+url);
-                Vod vod = UpdateService.getByUrl(url);
-                if(null!=vod){
-                    currentLive=vod;
-                    binding.liveName.setText(currentLive.getName()+" "+newProgress+"%");
-                }
-                if(newProgress==100){
-                    HistoryDaoX.updateChannel(thisContext,url);
-                    handler.sendMessageDelayed (handler.obtainMessage(2, "noText"),1000);
-                }
-                LogUtil.i("WebChromeClient", "onProgressChanged, newProgress:" + newProgress + ", view:" + view);
-            }
-            @Override
-            public void onShowCustomView(View view, IX5WebChromeClient.CustomViewCallback callback) {
-                LogUtil.i("WebChromeClient","onShowCustomView");
-                binding.fullscreen.addView(view);
-                binding.fullscreen.setVisibility(View.VISIBLE);
-            }
-            @Override
-            public void onPermissionRequest(PermissionRequest request) {
-                LogUtil.i("WebChromeClient","onPermissionRequest "+request.getOrigin());
-                LogUtil.i("WebChromeClient",request.getOrigin()+" "+ Arrays.toString(request.getResources()));
-                request.deny();
-            }
-            @Override
-            public void onHideCustomView() {
-                LogUtil.i("WebChromeClient","onHideCustomView");
-                binding.fullscreen.removeAllViews();
-                binding.fullscreen.setVisibility(View.GONE);
-            }
-        });
-        mWebView.setWebChromeClientExtension(new X5WebChromeClientExtension());
-    }
-
-    @Override
-    protected void webviewSet(IX5WebSettingsExtension webSettingsExtension) {
-        //无图
-        webSettingsExtension.setPicModel(IX5WebSettingsExtension.PicModel_NoPic);
-    }
-
-    @Override
-    protected Object getJsInterface() {
-        return new JsInterface();
-    }
-
-    private static boolean isMenuShow=false;
-    public class JsInterface{
-
-        // Android 调用 Js 方法1 中的返回值
-        @JavascriptInterface
-        public void toast(String message){
-            LogUtil.i(TAG,"message "+message);
-            ToastUtils.show(MyApplication.getContext(),message, Toast.LENGTH_SHORT);
-        }
-        @JavascriptInterface
-        public void message(String service,String data){
-            LogUtil.i(TAG,"service "+service+" data "+data);
-            if("history.save".equals(service)){
-                //final AppDatabase db = AppDatabase.getInstance(this);
-                HistoryDaoX.save(thisContext, data, new StringCallback() {
-                    @Override
-                    public void data(String data) {
-                        runOnUiThread(()->{
-                            mWebView.loadUrl(data);
-                        });
-                    }
-                });
-                return;
-            }
-            if("history.update".equals(service)){
-                HistoryDaoX.update(thisContext,data);
-                return;
-            }
-            if("menuShow".equals(service)){
-                //Util.evalOnUi(lWebView,data);
-                if(data.equals("1")){
-                    isMenuShow =true;
-                }else{
-                    isMenuShow =false;
-                }
-                return;
-            }
-            if("js".equals(service)){
-                Util.evalOnUi(mWebView,data);
-                return;
-            }
-            if("key".equals(service)){
-                keyCodeAllByCode(data);
-                return;
-            }
-            if("keyNum".equals(service)){
-                keyEventAll(Integer.parseInt(data));
-                return;
-            }
-            if("videoQuality".equals(service)){
-                videoQualityData=data;
-                return;
-            }
-        }
-        @JavascriptInterface
-        public String postJson(String url,String header, String requestBody){
-
-            Map<String, String> headerMap= JsonUtil.fromJson(header,
-                    new TypeToken<Map<String, String>>() {}.getType());
-            if(!url.startsWith("http")){
-                return FileUtil.readExt(MyApplication.getAppContext(),"tv-web/"+url);
-            }
-            LogUtil.i(TAG,headerMap.toString()+"url "+url+" "+requestBody);
-            return HttpUtil.postJson(url,headerMap,requestBody);
-        }
-        @JavascriptInterface
-        public String getJson(String url,String header){
-            Map<String, String> headerMap= JsonUtil.fromJson(header,
-                    new TypeToken<Map<String, String>>() {}.getType());
-            if(!url.startsWith("http")){
-                return FileUtil.readExt(MyApplication.getAppContext(),"tv-web/"+url);
-            }
-            LogUtil.i(TAG,headerMap.toString()+"url "+url);
-            return HttpUtil.getJson(url,headerMap);
-        }
-        @JavascriptInterface
-        public String getHtml(String url,String header){
-            Map<String, String> headerMap= JsonUtil.fromJson(header,
-                    new TypeToken<Map<String, String>>() {}.getType());
-            LogUtil.i(TAG,headerMap.toString()+" getHtml "+url);
-            return HttpUtil.getJson(url,headerMap);
-        }
-
-    }
-
-    private void initData() {
-        // 初始化收藏服务
-        favoriteService = FavoriteService.getInstance(this);
-        
-        // 使用异步任务加载数据
-        new Thread(() -> {
-            // 在后台线程执行耗时操作
-            List<Live> result = UpdateService.getByLivesWithFavorites(this);
-            
-            // 在UI线程更新界面
-            runOnUiThread(() -> {
-                provinces = result;
-                currentProvinceIndex = currentLive.getTagIndex();
-                showCurrentProvince();
-            });
-        }).start();
-    }
-
-    private Vod createVod(String name, String key, String url) {
-        Vod vod = new Vod();
-        vod.setName(name);
-        vod.setKey(key);
-        vod.setUrl(url);
-        return vod;
-    }
-
-    private void showCurrentProvince() {
-        if (provinces == null || provinces.isEmpty()) {
-            // 处理空数据情况
-            binding.provinceName.setText("无数据");
-            setupChannelList(new ArrayList<>());
+    private void switchCategory(int dir) {
+        if (provinces.isEmpty()) {
             return;
         }
-        
-        // 确保索引在有效范围内
-        if (currentProvinceIndex < 0) {
-            currentProvinceIndex = 0;
-        } else if (currentProvinceIndex >= provinces.size()) {
-            currentProvinceIndex = provinces.size() - 1;
+        currentProvinceIndex = (currentProvinceIndex + dir + provinces.size()) % provinces.size();
+        currentDetailIndex = 0;
+        showCurrentProvince(false);
+    }
+
+    private void showSourceName() {
+        if (sourceNames.isEmpty()) {
+            binding.sourceName.setText(SOURCE_ALL);
+            return;
         }
-        
+        String name = sourceNames.get(sourceIndex);
+        binding.sourceName.setText(SOURCE_ALL.equals(name) ? name : ("源 · " + name));
+    }
+
+    private void showCurrentProvince(boolean focusList) {
+        if (provinces.isEmpty()) {
+            binding.provinceName.setText("暂无频道");
+            setupChannelList(new ArrayList<>(), focusList);
+            return;
+        }
+        clampIndex();
         Live currentProvince = provinces.get(currentProvinceIndex);
-        int count = currentProvince.getVods() == null ? 0 : currentProvince.getVods().size();
-        binding.provinceName.setText(currentProvince.getName() + "(" + count + ")");
-        setupChannelList(currentProvince.getVods());
-        // 显示后，将焦点与选中项指向当前频道（对话框显示时不抢焦点）
-        try {
-            if (currentLive != null && currentLive.getTagIndex() == currentProvinceIndex) {
-                int idx = Math.max(0, currentLive.getDetailIndex());
-                if (binding.channelList.getAdapter() != null && binding.channelList.getCount() > 0) {
-                    if (idx >= binding.channelList.getCount()) { idx = binding.channelList.getCount() - 1; }
-                    final int finalIdx = idx;
-                    binding.channelList.post(() -> {
-                        if (!isExitDialogShowing) {
-                            binding.channelList.setSelection(finalIdx);
-                            binding.channelList.requestFocus();
-                        }
-                    });
-                }
-            }
-        } catch (Throwable ignore) {}
+        List<Vod> vods = currentProvince.getVods();
+        binding.provinceName.setText(currentProvince.getName() + "(" + vods.size() + ")");
+        setupChannelList(vods, focusList);
     }
 
-    private void setupChannelList(List<Vod> channels) {
+    private void setupChannelList(List<Vod> channels, boolean focusList) {
         ArrayAdapter<Vod> adapter = new ArrayAdapter<Vod>(this, android.R.layout.simple_list_item_1, channels) {
             @NonNull
             @Override
@@ -763,143 +618,54 @@ public class LiveActivity extends BaseActivity {
                     btn.setFocusable(false);
                 } else {
                     btn = (Button) convertView;
-                    
                     if (!(btn.getLayoutParams() instanceof AbsListView.LayoutParams)) {
                         btn.setLayoutParams(new AbsListView.LayoutParams(
                                 ViewGroup.LayoutParams.MATCH_PARENT,
                                 ViewGroup.LayoutParams.WRAP_CONTENT));
                     }
                 }
-                
                 Vod channel = getItem(position);
-                if (channel != null) {
-                    btn.setText(channel.getName());
+                if (null != channel) {
+                    boolean isCurrent = null != currentLive
+                            && channel.getUrl() != null
+                            && channel.getUrl().equals(currentLive.getUrl());
+                    btn.setText((isCurrent ? "▶ " : "") + channel.getName());
                 }
-                
                 return btn;
             }
         };
         binding.channelList.setAdapter(adapter);
         binding.channelList.setOnItemClickListener((parent, view, position, id) -> {
-            try {
-                Vod channel = channels.get(position);
-                if (channel.getUrl() != null) {
-                    currentLive = channel;
-                    // 在主线程中执行WebView操作
-                    runOnUiThread(() -> {
-                        try {
-                            LogUtil.i(TAG, "Loading URL in WebView: " + channel.getUrl());
-                            mWebView.loadUrl(channel.getUrl());
-                            LogUtil.i(TAG, "URL loaded successfully");
-                        } catch (Exception e) {
-                            LogUtil.e(TAG, "Error loading URL in WebView: " + e.getMessage());
-                            e.printStackTrace();
-                        }
-                    });
-                    
-                    // 更新历史记录
-                    HistoryDaoX.updateChannel(thisContext, channel.getUrl());
-                    
-                    // 显示提示
-                    showToast(channel.getName(), this);
-                    
-                    // 隐藏菜单
-                    hideMenu();
-                } else {
-                    LogUtil.e(TAG, "Channel or URL is null");
-                }
-            } catch (Exception e) {
-                LogUtil.e(TAG, "Error handling channel click: " + e.getMessage());
-                e.printStackTrace();
+            if (position < 0 || position >= channels.size()) {
+                return;
             }
+            Vod channel = channels.get(position);
+            currentDetailIndex = position;
+            playChannel(channel);
+            hideMenu();
         });
-    }
-
-    private void showMenu() {
-        binding.menuContainer.setVisibility(View.VISIBLE);
-        isMenuShow = true;
-        // 将省份定位到当前播放的省份
-        try {
-            if (currentLive != null) {
-                currentProvinceIndex = currentLive.getTagIndex();
-            }
-        } catch (Throwable ignore) {}
-        showCurrentProvince();
-        setupProvinceButtons();
-        // 将列表焦点与选中项定位到当前频道
-        try {
-            int sel = 0;
-            if (currentLive != null) { sel = Math.max(0, currentLive.getDetailIndex()); }
-            if (binding.channelList.getAdapter() != null && binding.channelList.getCount() > 0) {
-                if (sel >= binding.channelList.getCount()) { sel = binding.channelList.getCount() - 1; }
-                binding.channelList.setSelection(sel);
-                binding.channelList.requestFocus();
-            }
-        } catch (Throwable ignore) {}
-        
-        // 点击空白处关闭菜单
-        binding.menuContainer.setOnClickListener(v -> hideMenu());
-    }
-
-    private void setupProvinceButtons() {
-        binding.prevProvinceArea.setOnClickListener(v -> {
-            currentProvinceIndex--;
-            if (currentProvinceIndex < 0) {
-                currentProvinceIndex = provinces.size() - 1;
-            }
-            showCurrentProvince();
-        });
-
-        binding.nextProvinceArea.setOnClickListener(v -> {
-            currentProvinceIndex++;
-            if (currentProvinceIndex >= provinces.size()) {
-                currentProvinceIndex = 0;
-            }
-            showCurrentProvince();
-        });
-    }
-
-    private void hideMenu() {
-        binding.menuContainer.setVisibility(View.GONE);
-        isMenuShow = false;
-        binding.menuContainer.setOnClickListener(null);
-    }
-
-    // 已移除悬浮画质层逻辑
-
-    public class HzLiveBindPresenter implements tv.utao.x5.impl.IBaseBindingPresenter {
-        public void onClick(HzItem item){
-            if(item.getAction()!=null&&item.getAction().trim().length()>0){
-                Util.evalOnUi(mWebView,item.getAction());
-            }else if(item.getId()!=null){
-                String js = "$$(\\\"#"+item.getId()+"\\\").click()";
-                Util.evalOnUi(mWebView,js);
-            }
+        binding.channelList.setSelection(currentDetailIndex);
+        if (focusList) {
+            binding.channelList.post(() -> binding.channelList.requestFocus());
         }
     }
-    
-    /**
-     * 切换收藏状态
-     * @param vod 要切换收藏状态的频道
-     */
+
+    // ------------------------------------------------------------------ 收藏 / 数字键
+
     private void toggleFavorite(Vod vod) {
-        if (favoriteService.isFavorite(vod.getUrl())) {
-            // 已收藏，取消收藏
-            favoriteService.removeFavorite(vod.getUrl());
-            ToastUtils.show(this, "已取消收藏: " + vod.getName(), Toast.LENGTH_SHORT);
-        } else {
-            // 未收藏，添加收藏
-            favoriteService.addFavorite(vod);
-            ToastUtils.show(this, "已收藏: " + vod.getName(), Toast.LENGTH_SHORT);
+        if (null == vod) {
+            return;
         }
-        
-        // 重新加载数据以更新界面
+        if (favoriteService.isFavorite(vod.getUrl())) {
+            favoriteService.removeFavorite(vod.getUrl());
+            ToastUtils.show(this, "已取消收藏：" + vod.getName(), Toast.LENGTH_SHORT);
+        } else {
+            favoriteService.addFavorite(vod);
+            ToastUtils.show(this, "已收藏：" + vod.getName(), Toast.LENGTH_SHORT);
+        }
         initData();
     }
 
-
-    // 多位数字输入缓冲（用于收藏栏数字跳转）
-    // 多位数字输入缓冲（用于收藏栏数字跳转）
     private final StringBuilder digitBuffer = new StringBuilder();
     private final Handler digitInputHandler = new Handler(Looper.getMainLooper());
     private static final int DIGIT_TIMEOUT_MS = 1000;
@@ -908,53 +674,257 @@ public class LiveActivity extends BaseActivity {
         public void run() {
             String s = digitBuffer.toString();
             digitBuffer.setLength(0);
-            if (s.isEmpty()) return;
+            if (s.isEmpty()) {
+                return;
+            }
             try {
-                int num = Integer.parseInt(s);
-                jumpToFavoriteByNumber(num);
-            } catch (NumberFormatException ignore) {}
+                jumpToFavoriteByNumber(Integer.parseInt(s));
+            } catch (NumberFormatException ignore) {
+            }
         }
     };
+
     private boolean isDigitKey(int keyCode) {
         return keyCode >= KeyEvent.KEYCODE_0 && keyCode <= KeyEvent.KEYCODE_9;
     }
+
     private char digitFromKeyCode(int keyCode) {
         return (char) ('0' + (keyCode - KeyEvent.KEYCODE_0));
     }
 
-    // 跳转到“收藏”栏目中对应序号的频道并播放（支持 >= 10）
+    /** 数字键跳到「收藏」分组的第 N 个频道并播放 */
     private void jumpToFavoriteByNumber(int num) {
         Live favoriteLive = null;
-        for (Live l : provinces) {
-            if ("favorite".equals(l.getTag())) {
-                favoriteLive = l;
+        int tagIndex = -1;
+        for (int i = 0; i < provinces.size(); i++) {
+            if ("favorite".equals(provinces.get(i).getTag())) {
+                favoriteLive = provinces.get(i);
+                tagIndex = i;
                 break;
             }
         }
-        if (favoriteLive == null || favoriteLive.getVods() == null) {
+        if (null == favoriteLive || null == favoriteLive.getVods()) {
             return;
         }
-        int idx = num - 1; // 1-based -> 0-based
+        int idx = num - 1;
         if (idx < 0 || idx >= favoriteLive.getVods().size()) {
             return;
         }
-        Vod channel = favoriteLive.getVods().get(idx);
-        currentLive = channel;
+        currentProvinceIndex = tagIndex;
+        currentDetailIndex = idx;
+        showToast(favoriteLive.getVods().get(idx).getName(), this);
+        playChannel(favoriteLive.getVods().get(idx));
+    }
 
-        // 加载并播放
-        runOnUiThread(() -> {
-            try {
-                mWebView.loadUrl(channel.getUrl());
-            } catch (Exception e) {
-                LogUtil.e(TAG, "Error loading URL: " + e.getMessage());
-            }
+    // ------------------------------------------------------------------ 退出对话框
+
+    private void showExitDialog() {
+        if (null == exitDialogBinding) {
+            initExitDialog();
+        }
+        if (null == exitDialogBinding) {
+            return;
+        }
+        isExitDialogShowing = true;
+        exitDialogBinding.exitDialogContainer.setVisibility(View.VISIBLE);
+        setupHzListInExit();
+        updateFavoriteButtonInDialog();
+        exitDialogBinding.btnCancel.post(() -> exitDialogBinding.btnCancel.requestFocus());
+    }
+
+    private void updateFavoriteButtonInDialog() {
+        if (null != currentLive && null != favoriteService
+                && favoriteService.isFavorite(currentLive.getUrl())) {
+            exitDialogBinding.btnFavorite.setText("取消收藏当前频道");
+        } else {
+            exitDialogBinding.btnFavorite.setText("收藏当前频道");
+        }
+    }
+
+    private void hideExitDialog() {
+        if (null != exitDialogBinding) {
+            isExitDialogShowing = false;
+            exitDialogBinding.exitDialogContainer.setVisibility(View.GONE);
+        }
+        mWebView.requestFocus();
+    }
+
+    private void initExitDialog() {
+        View dialogView = findViewById(R.id.exitDialog);
+        exitDialogBinding = DataBindingUtil.bind(dialogView);
+        if (null == exitDialogBinding) {
+            return;
+        }
+        exitDialogBinding.exitDialogContainer.setFocusable(true);
+        exitDialogBinding.exitDialogContainer.setFocusableInTouchMode(true);
+
+        exitDialogBinding.btnFavorite.setOnClickListener(v -> {
+            toggleFavorite(currentLive);
+            updateFavoriteButtonInDialog();
+            exitDialogBinding.btnFavorite.post(() -> exitDialogBinding.btnFavorite.requestFocus());
         });
+        exitDialogBinding.btnCancel.setOnClickListener(v -> hideExitDialog());
+        exitDialogBinding.btnBackHome.setOnClickListener(v -> {
+            hideExitDialog();
+            toHome();
+        });
+        exitDialogBinding.btnExitApp.setOnClickListener(v -> {
+            finishAffinity();
+            System.exit(0);
+        });
+        exitDialogBinding.dialogBackdrop.setOnClickListener(v -> hideExitDialog());
+    }
 
-        // 记录历史、提示、收起菜单
-        try {
-            HistoryDaoX.updateChannel(thisContext, channel.getUrl());
-        } catch (Throwable ignore) {}
-        showToast(channel.getName(), this);
-        hideMenu();
+    private void toHome() {
+        startActivity(new Intent(this, HomeActivity.class));
+        finish();
+    }
+
+    // ------------------------------------------------------------------ 画质（页面提供时）
+
+    protected static String videoQualityData = null;
+
+    private void setupHzListInExit() {
+        List<HzItem> hzItems = new ArrayList<>();
+        if (null != videoQualityData) {
+            try {
+                hzItems = JsonUtil.fromJson(videoQualityData, new TypeToken<List<HzItem>>() {
+                }.getType());
+            } catch (Exception ignore) {
+            }
+        }
+        BaseBindingAdapter hzAdapter = new BaseBindingAdapter<HzItem, ItemHzLiveBinding>(hzItems, R.layout.item_hz_live) {
+            @Override
+            public void doBindViewHolder(BaseViewHolder<ItemHzLiveBinding> holder, HzItem item) {
+                holder.getBinding().setVariable(BR.item, item);
+                holder.getBinding().setVariable(BR.itemPresenter, ItemPresenter);
+            }
+        };
+        hzAdapter.setItemPresenter(new HzLiveBindPresenter());
+        exitDialogBinding.hzListInExit.setLayoutManager(
+                new androidx.recyclerview.widget.LinearLayoutManager(this,
+                        androidx.recyclerview.widget.LinearLayoutManager.HORIZONTAL, false));
+        exitDialogBinding.hzListInExit.setAdapter(hzAdapter);
+        exitDialogBinding.hzListInExit.addOnChildAttachStateChangeListener(
+                new androidx.recyclerview.widget.RecyclerView.OnChildAttachStateChangeListener() {
+                    @Override
+                    public void onChildViewAttachedToWindow(View view) {
+                        View btn = view.findViewById(R.id.hzItem);
+                        if (null != btn) {
+                            if (btn.getId() == View.NO_ID) {
+                                btn.setId(View.generateViewId());
+                            }
+                            btn.setNextFocusUpId(exitDialogBinding.btnCancel.getId());
+                            btn.setNextFocusDownId(exitDialogBinding.btnFavorite.getId());
+                        }
+                    }
+
+                    @Override
+                    public void onChildViewDetachedFromWindow(View view) {
+                    }
+                });
+    }
+
+    public class HzLiveBindPresenter implements tv.utao.x5.impl.IBaseBindingPresenter {
+        public void onClick(HzItem item) {
+            if (item.getAction() != null && item.getAction().trim().length() > 0) {
+                Util.evalOnUi(mWebView, item.getAction());
+            } else if (item.getId() != null) {
+                String js = "$$(\\\"#" + item.getId() + "\\\").click()";
+                Util.evalOnUi(mWebView, js);
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------ 布局与 JS 桥
+
+    private void bind() {
+        binding = DataBindingUtil.setContentView(this, R.layout.activity_live);
+        ViewGroup container = binding.webviewWrapper;
+        container.addView(mWebView, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
+    }
+
+    public class JsInterface {
+
+        @JavascriptInterface
+        public void toast(String message) {
+            try {
+                ToastUtils.show(MyApplication.getContext(), message, Toast.LENGTH_SHORT);
+            } catch (Throwable ignore) {
+            }
+        }
+
+        @JavascriptInterface
+        public void message(String service, String data) {
+            LogUtil.i(TAG, "service " + service + " data " + data);
+            if ("history.save".equals(service)) {
+                HistoryDaoX.save(thisContext, data, new StringCallback() {
+                    @Override
+                    public void data(String data) {
+                        runOnUiThread(() -> {
+                            if (null != mWebView) {
+                                mWebView.loadUrl(data);
+                            }
+                        });
+                    }
+                });
+                return;
+            }
+            if ("history.update".equals(service)) {
+                HistoryDaoX.update(thisContext, data);
+                return;
+            }
+            if ("menuShow".equals(service)) {
+                isMenuShow = "1".equals(data);
+                return;
+            }
+            if ("js".equals(service)) {
+                Util.evalOnUi(mWebView, data);
+                return;
+            }
+            if ("key".equals(service)) {
+                keyCodeAllByCode(data);
+                return;
+            }
+            if ("keyNum".equals(service)) {
+                keyEventAll(Integer.parseInt(data));
+                return;
+            }
+            if ("videoQuality".equals(service)) {
+                videoQualityData = data;
+            }
+        }
+
+        @JavascriptInterface
+        public String postJson(String url, String header, String requestBody) {
+            Map<String, String> headerMap = JsonUtil.fromJson(header,
+                    new TypeToken<Map<String, String>>() {
+                    }.getType());
+            if (!url.startsWith("http")) {
+                return FileUtil.readExt(MyApplication.getAppContext(), "tv-web/" + url);
+            }
+            return HttpUtil.postJson(url, headerMap, requestBody);
+        }
+
+        @JavascriptInterface
+        public String getJson(String url, String header) {
+            Map<String, String> headerMap = JsonUtil.fromJson(header,
+                    new TypeToken<Map<String, String>>() {
+                    }.getType());
+            if (!url.startsWith("http")) {
+                return FileUtil.readExt(MyApplication.getAppContext(), "tv-web/" + url);
+            }
+            return HttpUtil.getJson(url, headerMap);
+        }
+
+        @JavascriptInterface
+        public String getHtml(String url, String header) {
+            Map<String, String> headerMap = JsonUtil.fromJson(header,
+                    new TypeToken<Map<String, String>>() {
+                    }.getType());
+            return HttpUtil.getJson(url, headerMap);
+        }
     }
 }

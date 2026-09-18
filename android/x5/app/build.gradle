@@ -13,6 +13,10 @@ def keystoreProperties = new Properties()
 if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
 }
+// 只有当签名文件真实存在时才使用正式签名，否则回退到 debug 签名，
+// 保证在没有密钥的机器 / CI 上 assembleRelease 也能产出可安装的 APK。
+def releaseStoreFile = keystoreProperties['RELEASE_STORE_FILE'] ? file(keystoreProperties['RELEASE_STORE_FILE']) : null
+def hasReleaseSigning = releaseStoreFile != null && releaseStoreFile.exists()
 
 android {
    /* flavorDimensions= ["env"]
@@ -27,13 +31,15 @@ android {
     namespace 'tv.utao.x5'
     compileSdk 34
 
-    // 签名配置（从 local.properties 读取）
+    // 签名配置（从 local.properties 读取；无密钥时回退 debug 签名）
     signingConfigs {
         release {
-            storeFile file(keystoreProperties['RELEASE_STORE_FILE'] ?: "../keystore/x5.jks")
-            storePassword keystoreProperties['RELEASE_STORE_PASSWORD'] ?: ""
-            keyAlias keystoreProperties['RELEASE_KEY_ALIAS'] ?: "x5"
-            keyPassword keystoreProperties['RELEASE_KEY_PASSWORD'] ?: ""
+            if (hasReleaseSigning) {
+                storeFile releaseStoreFile
+                storePassword keystoreProperties['RELEASE_STORE_PASSWORD']
+                keyAlias keystoreProperties['RELEASE_KEY_ALIAS']
+                keyPassword keystoreProperties['RELEASE_KEY_PASSWORD']
+            }
         }
     }
     buildFeatures {
@@ -76,7 +82,7 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
         release {
-            signingConfig signingConfigs.release
+            signingConfig hasReleaseSigning ? signingConfigs.release : signingConfigs.debug
             minifyEnabled false
             buildConfigField('String', 'BUILD_ENV_TYPE', '"pro"')
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'

@@ -70,13 +70,74 @@
             android:focusable="true">
 
             <LinearLayout
-                android:layout_width="240dp"
+                android:layout_width="300dp"
                 android:layout_height="match_parent"
                 android:layout_gravity="start"
                 android:background="#80000000"
                 android:orientation="vertical">
 
-                <!-- 省份标题栏 -->
+                <!-- 源站标题栏：按设置(MENU)键→菜单内左右切换播放源 -->
+                <LinearLayout
+                    android:id="@+id/sourceRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:background="#66000000">
+
+                    <FrameLayout
+                        android:id="@+id/prevSourceArea"
+                        android:layout_width="0dp"
+                        android:layout_height="48dp"
+                        android:layout_weight="1"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:background="@drawable/menu_button_background">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="match_parent"
+                            android:layout_marginStart="16dp"
+                            android:gravity="center"
+                            android:text="←"
+                            android:textColor="#FFFFFF"
+                            android:textSize="20sp" />
+                    </FrameLayout>
+
+                    <TextView
+                        android:id="@+id/sourceName"
+                        android:layout_width="wrap_content"
+                        android:layout_height="48dp"
+                        android:layout_marginStart="-50dp"
+                        android:layout_marginEnd="-50dp"
+                        android:clickable="false"
+                        android:gravity="center"
+                        android:text="全部源"
+                        android:textColor="#FFB37A"
+                        android:textSize="18sp" />
+
+                    <FrameLayout
+                        android:id="@+id/nextSourceArea"
+                        android:layout_width="0dp"
+                        android:layout_height="48dp"
+                        android:layout_weight="1"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:background="@drawable/menu_button_background">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="match_parent"
+                            android:layout_gravity="end"
+                            android:layout_marginEnd="16dp"
+                            android:gravity="center"
+                            android:text="→"
+                            android:textColor="#FFFFFF"
+                            android:textSize="20sp" />
+                    </FrameLayout>
+
+                </LinearLayout>
+
+                <!-- 分类标题栏 -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -97,7 +158,7 @@
                             android:layout_weight="1"
                             android:clickable="true"
                             android:focusable="true"
-                            android:background="@android:color/transparent">
+                            android:background="@drawable/menu_button_background">
 
                             <!-- 左箭头 -->
                             <TextView
@@ -130,7 +191,7 @@
                             android:layout_weight="1"
                             android:clickable="true"
                             android:focusable="true"
-                            android:background="@android:color/transparent">
+                            android:background="@drawable/menu_button_background">
 
                             <!-- 右箭头 -->
                             <TextView

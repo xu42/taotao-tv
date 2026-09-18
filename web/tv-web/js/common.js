@@ -55,6 +55,20 @@ var _tvFunc={
         }
         return url;
     },
+    /**
+     * 去掉应用内置页面的“伪源”前缀，得到相对地址。
+     * 例如 https://any/tv-web/live.html?url=x -> live.html?url=x
+     */
+    localUrl(url){
+        if(!url){
+            return url;
+        }
+        let idx= url.indexOf("/tv-web/");
+        if(idx>0){
+            return url.substring(idx+"/tv-web/".length());
+        }
+        return url;
+    },
     getVideoQuality(videoElement) {
     // 确保视频元数据已加载
    /* if (videoElement.readyState < 1) {

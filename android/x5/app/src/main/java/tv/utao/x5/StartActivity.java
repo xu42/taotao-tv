@@ -70,9 +70,10 @@ public class StartActivity extends Activity {
                 thisConfigDTO=configDTO;
                 int versionCode=  AppVersionUtils.getVersionCode();
                 ApkInfo apkInfo = configDTO.getApk();
-                int updateCode= apkInfo.getVersion();
+                // 自建服务端可以只返回资源更新信息：缺少 apk 字段时跳过应用自更新，直接进入
+                int updateCode = (null == apkInfo || null == apkInfo.getVersion()) ? 0 : apkInfo.getVersion();
                 LogUtil.i(TAG,updateCode+" old "+versionCode);
-                if(updateCode>versionCode){
+                if(null != apkInfo && updateCode>versionCode){
                     //更新数据
                     runOnUiThread(()->{
                         if(!apkInfo.getForce()&&isUpdateLater(thisContext)){
@@ -187,20 +188,9 @@ public class StartActivity extends Activity {
         }
     }
     private void to(){
-        // 根据设置跳转到不同页面
-        String startPage = ValueUtil.getString(this, "startPage", "main");
-        Intent intent;
-        
-        if ("live".equals(startPage)) {
-            // 跳转到直播页面
-            intent = new Intent(StartActivity.this, LiveActivity.class);
-            LogUtil.i(TAG, "启动页面：电视直播");
-        } else {
-            // 默认跳转到主页面
-            intent = new Intent(StartActivity.this, MainActivity.class);
-            LogUtil.i(TAG, "启动页面：视频点播");
-        }
-        
+        // 启动后统一进入「直播 / 影视」二选一的首页
+        Intent intent = new Intent(StartActivity.this, HomeActivity.class);
+        LogUtil.i(TAG, "启动页面：首页");
         startActivity(intent);
         finish();
     }

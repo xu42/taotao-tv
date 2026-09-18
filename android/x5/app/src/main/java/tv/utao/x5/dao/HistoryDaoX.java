@@ -46,11 +46,12 @@ public class HistoryDaoX {
         HistoryDao historyDao = AppDatabase.getInstance(context).historyDao();
         History history =   historyDao.queryOneBySite("tv");
         if(null==history){
-            return UpdateService.getByKey("0_0");
+            // 没有历史记录时默认 CCTV-1
+            return UpdateService.getDefaultChannel();
         }
         Vod vod= UpdateService.getByUrl(history.url);
         if(null==vod){
-            return UpdateService.getByKey("0_0");
+            return UpdateService.getDefaultChannel();
         }
         return vod;
     }

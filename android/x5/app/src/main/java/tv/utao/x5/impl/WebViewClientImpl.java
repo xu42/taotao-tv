@@ -18,6 +18,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import tv.utao.x5.MyApplication;
+import tv.utao.x5.util.AppConfig;
 import tv.utao.x5.util.AppVersionUtils;
 import tv.utao.x5.util.ConstantMy;
 import tv.utao.x5.util.FileUtil;
@@ -61,23 +62,22 @@ public class WebViewClientImpl extends WebViewClient {
 
         LogUtil.i(TAG, "onPageStarted , url:" + url);
         currentUrl=url;
-        String baseFolder = "tv-web/";
         if(url.contains("tv-web")){
-            if(url.endsWith("index.html")){
+            if(isRootPage(url)){
                 rootUrl=url;
             }
             lastUrl=url;
         }
-  /*      String fileContent = FileUtil.readExt(baseFolder +"js/begin.js");
-        LogUtil.i(TAG,"begin:: "+fileContent);*/
-        //begin.js cctv测试直接全屏
-       // String fileContent= FileUtil.readAssert(context,"web/js/begin.js");
-     /*   view.evaluateJavascript(fileContent, new ValueCallback<String>() {
-            @Override
-            public void onReceiveValue(String s) {
-                LogUtil.i(TAG, "onReceiveValue:"+s);
-            }
-        });*/
+    }
+
+    /** 应用内置页面的「根页面」：影视聚合页（旧版为 index.html） */
+    public static boolean isRootPage(String url){
+        if(null==url){
+            return false;
+        }
+        int idx= url.indexOf("?");
+        String pure= idx>0? url.substring(0,idx): url;
+        return pure.endsWith("video.html") || pure.endsWith("index.html");
     }
 
 
@@ -289,6 +289,7 @@ public class WebViewClientImpl extends WebViewClient {
        String baseStr= FileUtil.readExt(MyApplication.getAppContext(),fileName);
         Map<String, Object> data = new HashMap<>();
         data.put("version", AppVersionUtils.getVersionCode());
+        data.put("apiBase", AppConfig.API_BASE);
        return TplUtil.tpl(baseStr,data);
     }
 
@@ -353,10 +354,10 @@ public class WebViewClientImpl extends WebViewClient {
             return null;
         }
         if(currentUrl.contains("tv-web")){
-            if(currentUrl.endsWith("index.html")){
+            if(isRootPage(currentUrl)){
                 return null;
             }
-            return rootUrl;
+            return null==rootUrl? AppConfig.pageUrl(AppConfig.VIDEO_PAGE): rootUrl;
         }
         return lastUrl;
     }

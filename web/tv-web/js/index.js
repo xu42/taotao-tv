@@ -231,7 +231,6 @@ let _data={
         apps.push({id:0,url:"tv.html",name:"电视频道",pic:"img/utao.jpg"});
         apps.push({id:0,url:"https://www.yangshipin.cn/tv/home?pid=600002475",name:"CCTV直播",pic:"img/cctv.jpg"});
         apps.push({id:0,url:"cctv.html",name:"央视片库",pic:"img/cctv-video.jpg"});
-        apps.push({id:0,url:"https://www.vonchange.com",name:"土拨鼠大屏助手",pic:"img/tubo.png"});
         apps.push({id:0,url:"bestv.html",name:"百视通",pic:"img/bestv.png"});
         apps.push({id:0,url:"mgtv.html",name:"芒果TV",pic:"img/manguo.jpeg"});
         apps.push({id:0,url:"youku.html",name:"优酷",pic:"img/youku.jpg"});
@@ -244,8 +243,5 @@ let _data={
 }
 $$(function() {
     _html.init();
-    if(LA){
-        LA.init({id:"3Kwwp7VWLvVgtOND",ck:"3Kwwp7VWLvVgtOND"});
-    }
 });
 

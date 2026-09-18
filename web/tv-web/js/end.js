@@ -76,12 +76,17 @@
          document.head.appendChild(script);
      }
  };
+ // 应用内置页面的“伪源”：安卓端会拦截带 tv-web/ 的请求并从 APK 资源读取
+ var _tvWebOrigin="https://tv.xu42.com/tv-web/";
  var _browser={
     config:{
          isTvApp:false,
     },
     getURL(src){
-       let  baseUrl="https://www.utao.tv/tv-web/";
+       // 当前就在应用内置页面里时，用当前源即可；否则用伪源常量
+       let baseUrl= window.location.href.indexOf("/tv-web/")>0
+              ? window.location.origin+"/tv-web/"
+              : _tvWebOrigin;
            if(window.location.href.startsWith("https://www.bestv.com.cn/web/play/")){
                baseUrl="https://www.bestv.com.cn/tv-web/";
            }

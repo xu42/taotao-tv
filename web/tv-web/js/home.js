@@ -95,9 +95,7 @@ const Filter = {
                     item.url=_tvFunc.url(item.url);
                     console.log(item.url);
                     if(!isApp||_tvFunc.isGecko()){
-                        if(item.url.startsWith("https://tv.utao.tv/tv-web/")){
-                            item.url=item.url.substring(26);
-                        }
+                        item.url=_tvFunc.localUrl(item.url);
                         window.location.href = item.url;
                         return;
                     }

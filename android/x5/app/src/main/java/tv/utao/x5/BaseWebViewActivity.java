@@ -52,6 +52,7 @@ import tv.utao.x5.impl.BaseViewHolder;
 import tv.utao.x5.impl.IBaseBindingPresenter;
 import tv.utao.x5.impl.X5WebChromeClientExtension;
 import tv.utao.x5.service.UpdateService;
+import tv.utao.x5.util.AppConfig;
 import tv.utao.x5.util.AppVersionUtils;
 import tv.utao.x5.util.DataCleanManager;
 import tv.utao.x5.util.FileUtil;
@@ -69,9 +70,10 @@ import tv.utao.x5.utils.ToastUtils;
  */
 public class BaseWebViewActivity extends BaseActivity {
     protected String TAG = "BaseWebViewActivity";
-    private static final String mHomeUrl =
-            "https://tv.utao.tv/tv-web/index.html";
-            //"file:///android_asset/homePage.html";
+
+    /** 影视聚合页（内置页面，由 WebViewClientImpl 拦截后从 APK 资源读取） */
+    private static final String mHomeUrl = AppConfig.pageUrl(AppConfig.VIDEO_PAGE);
+
     protected  ActivityMainBinding binding;
 
     private boolean x5Ok(){
@@ -85,10 +87,7 @@ public class BaseWebViewActivity extends BaseActivity {
         UpdateService.updateRes(this);
         initWebView();
         //mWebView.requestFocus();
-        //file:///android_asset/tv-web/index.html http://www.utao.tv/tv-web/index.html
         mWebView.loadUrl(mHomeUrl);
-        ConfigApi.syncIsX5Ok(this);
-
     }
 
 
@@ -546,7 +545,13 @@ public class BaseWebViewActivity extends BaseActivity {
             if("updateApk".equals(service)){
                 int versionCode=  AppVersionUtils.getVersionCode();
                 ConfigDTO configDTO =  ConfigApi.getConfig();
+                if(null==configDTO){
+                    return;
+                }
                 ApkInfo apkInfo = configDTO.getApk();
+                if(null==apkInfo||null==apkInfo.getVersion()||null==apkInfo.getUrl()){
+                    return;
+                }
                 if(apkInfo.getVersion()<=versionCode){
                     return;
                 }
@@ -579,8 +584,8 @@ public class BaseWebViewActivity extends BaseActivity {
                      oldConfig = JsonUtil.fromJson(oldJson,ConfigDTO.class);
                 }
                 int versionCode=  AppVersionUtils.getVersionCode();
-                ApkInfo apkInfo = configDTO.getApk();
-                int updateCode= apkInfo.getVersion();
+                ApkInfo apkInfo = (null==configDTO)?null:configDTO.getApk();
+                int updateCode = (null==apkInfo||null==apkInfo.getVersion())?0:apkInfo.getVersion();
                 SysInfo sysInfo = new SysInfo();
                 if(updateCode>versionCode){
                     sysInfo.setHaveNew(true);
@@ -595,7 +600,7 @@ public class BaseWebViewActivity extends BaseActivity {
                 sysInfo.setCacheSize(DataCleanManager.getCacheSize(thisContext));
                 //Build.VERSION.SDK_INT
                 sysInfo.setVersionName(AppVersionUtils.getVersionName());
-                if(null!=oldConfig){
+                if(null!=oldConfig&&null!=oldConfig.getRes()){
                     sysInfo.setResVersion(""+oldConfig.getRes().getVersion());
                 }
 

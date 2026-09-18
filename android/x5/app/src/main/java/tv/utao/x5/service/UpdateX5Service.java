@@ -44,13 +44,20 @@ public class UpdateX5Service {
         }
         boolean is64= Util.is64();
         if(is64){
-            return configMap.get("64").get(0);
+            List<String> urls64 = configMap.get("64");
+            if(null==urls64||urls64.isEmpty()){
+                return null;
+            }
+            return urls64.get(0);
         }
         List<String>  urls =  configMap.get("32");
+        if(null==urls||urls.isEmpty()){
+            return null;
+        }
         if (android.os.Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             return  urls.get(0);
         }
-        return  urls.get(1);
+        return  urls.size()>1?urls.get(1):urls.get(0);
     }
     private  static File filePublicPath(String fileName){
          File  publicDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);

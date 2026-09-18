@@ -5,7 +5,7 @@
     <data>
     </data>
 
-    <!-- 退出对话框 - 占据右侧1/3屏幕 -->
+    <!-- 退出 / 操作对话框 - 左侧提示 + 右侧操作区（约 1/3 屏宽） -->
     <LinearLayout
         android:id="@+id/exitDialogContainer"
         android:layout_width="match_parent"
@@ -17,7 +17,7 @@
         android:focusableInTouchMode="true"
         android:descendantFocusability="afterDescendants">
 
-        <!-- 左侧展示区域（占2/3），显示赞赏二维码与说明，点击关闭对话框 -->
+        <!-- 左侧提示区域，点击关闭对话框 -->
         <LinearLayout
             android:id="@+id/dialogBackdrop"
             android:layout_width="0dp"
@@ -30,25 +30,28 @@
             android:gravity="center"
             android:padding="16dp">
 
-            <ImageView
-                android:id="@+id/qrDonate"
-                android:layout_width="240dp"
-                android:layout_height="240dp"
-                android:contentDescription="打赏二维码"
-                android:scaleType="fitCenter" />
-
             <TextView
-                android:id="@+id/donateText"
+                android:id="@+id/exitTipTitle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:text="关注抖音@utaotv\n第一时间获取新软上线通知"
-                android:textColor="#FFFFFF"
-                android:textSize="16sp"
+                android:text="遥控器操作提示"
+                android:textColor="#FFB37A"
+                android:textSize="24sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/exitTipText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:text="上下左右：快速切台 / 移动焦点\n设置键：打开频道菜单（可切换源）\n数字键：跳转收藏栏对应序号"
+                android:textColor="#CCCCCC"
+                android:textSize="15sp"
+                android:lineSpacingExtra="6dp"
                 android:gravity="center" />
         </LinearLayout>
 
-        <!-- 右侧对话框内容（占1/3） -->
+        <!-- 右侧对话框内容（约 1/3 屏宽） -->
         <LinearLayout
             android:id="@+id/exitDialogContent"
             android:layout_width="0dp"
@@ -62,124 +65,72 @@
             android:focusableInTouchMode="true"
             android:descendantFocusability="afterDescendants">
 
-            <!-- 顶部间距 -->
-            <Space
-                android:layout_width="match_parent"
-                android:layout_height="8dp" />
-
-            <!-- 启动首页设置（只保留一个按钮） -->
-            <Button
-                android:id="@+id/btnStartToggle"
-                android:layout_width="match_parent"
-                android:layout_height="44dp"
-                android:text="启动电视直播"
-                android:textColor="#FFFFFF"
-                android:textSize="16sp"
-                android:background="@drawable/menu_button_background"
-                android:focusable="true"
-                android:focusableInTouchMode="true"
-                android:clickable="true"
-                android:layout_marginBottom="10dp"
-                android:nextFocusDown="@id/btnFavorite"
-                android:nextFocusUp="@id/btnCancel" />
-
-			<!-- 开启/关闭X5内核（会关闭应用） -->
-			<Button
-				android:id="@+id/btnOpenX5"
-				android:layout_width="match_parent"
-				android:layout_height="44dp"
-				android:text="开启X5内核(会关闭应用)"
-				android:textColor="#FFFFFF"
-				android:textSize="15sp"
-				android:background="@drawable/menu_button_background"
-				android:focusable="true"
-				android:focusableInTouchMode="true"
-				android:clickable="true"
-				android:layout_marginBottom="10dp"
-				android:nextFocusUp="@id/btnStartToggle"
-				android:nextFocusDown="@id/hzListInExit" />
-
-			<!-- 开启自启动设置 -->
-			<Button
-				android:id="@+id/btnAutoStart"
-				android:layout_width="match_parent"
-				android:layout_height="44dp"
-				android:text="开启自启动"
-				android:textColor="#FFFFFF"
-				android:textSize="15sp"
-				android:background="@drawable/menu_button_background"
-				android:focusable="true"
-				android:focusableInTouchMode="true"
-				android:clickable="true"
-				android:layout_marginBottom="10dp"
-				android:nextFocusUp="@id/btnOpenX5"
-				android:nextFocusDown="@id/hzListInExit"
-				android:visibility="gone" />
-
-			<!-- 分割线 -->
-            <View
-                android:layout_width="match_parent"
-                android:layout_height="1dp"
-                android:background="#33FFFFFF"
-                android:layout_marginTop="6dp"
-                android:layout_marginBottom="16dp" />
-
-            <!-- 画质列表（在收藏栏目上方，仅显示选项） -->
+            <!-- 画质列表（页面提供画质时才会出现） -->
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/hzListInExit"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="10dp"
-                android:overScrollMode="never"/>
+                android:overScrollMode="never" />
 
-            <!-- 操作按钮 -->
-            <LinearLayout
+            <Button
+                android:id="@+id/btnFavorite"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:gravity="center">
+                android:layout_height="44dp"
+                android:layout_marginBottom="10dp"
+                android:background="@drawable/menu_button_background"
+                android:clickable="true"
+                android:focusable="true"
+                android:focusableInTouchMode="true"
+                android:text="收藏当前频道"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp"
+                android:nextFocusDown="@id/btnBackHome"
+                android:nextFocusUp="@id/btnCancel" />
 
-                <!-- 收藏按钮 -->
-				<Button
-                    android:id="@+id/btnFavorite"
-                    android:layout_width="match_parent"
-                    android:layout_height="44dp"
-                    android:layout_marginBottom="10dp"
-                    android:text="收藏当前频道"
-                    android:textColor="#FFFFFF"
-                    android:textSize="16sp"
-                    android:background="@drawable/menu_button_background"
-                    android:focusable="true"
-                    android:focusableInTouchMode="true"
-                    android:clickable="true"
-					android:nextFocusUp="@id/btnStartToggle"
-                    android:nextFocusDown="@id/btnCancel"
-                    android:defaultFocusHighlightEnabled="true" />
-
-                <Button
-                    android:id="@+id/btnCancel"
-                    android:layout_width="match_parent"
-                    android:layout_height="44dp"
-                    android:text="取消"
-                    android:textColor="#CCCCCC"
-                    android:textSize="16sp"
-                    android:background="@drawable/menu_button_background"
-                    android:focusable="true"
-                    android:focusableInTouchMode="false"
-                    android:clickable="true"
-                    android:nextFocusUp="@id/btnFavorite"
-                    android:nextFocusDown="@id/btnStartToggle" />
-            </LinearLayout>
-
-            <!-- 提示信息 -->
-            <TextView
+            <Button
+                android:id="@+id/btnBackHome"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
-                android:text="再次按返回键退出应用\n如有问题关注抖音utaotv"
-                android:textColor="#999999"
-                android:textSize="13sp"
-                android:gravity="center" />
+                android:layout_height="44dp"
+                android:layout_marginBottom="10dp"
+                android:background="@drawable/menu_button_background"
+                android:clickable="true"
+                android:focusable="true"
+                android:focusableInTouchMode="true"
+                android:text="返回首页"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp"
+                android:nextFocusDown="@id/btnExitApp"
+                android:nextFocusUp="@id/btnFavorite" />
+
+            <Button
+                android:id="@+id/btnExitApp"
+                android:layout_width="match_parent"
+                android:layout_height="44dp"
+                android:layout_marginBottom="10dp"
+                android:background="@drawable/menu_button_background"
+                android:clickable="true"
+                android:focusable="true"
+                android:focusableInTouchMode="true"
+                android:text="退出应用"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp"
+                android:nextFocusDown="@id/btnCancel"
+                android:nextFocusUp="@id/btnBackHome" />
+
+            <Button
+                android:id="@+id/btnCancel"
+                android:layout_width="match_parent"
+                android:layout_height="44dp"
+                android:background="@drawable/menu_button_background"
+                android:clickable="true"
+                android:focusable="true"
+                android:focusableInTouchMode="true"
+                android:text="取消"
+                android:textColor="#CCCCCC"
+                android:textSize="16sp"
+                android:nextFocusDown="@id/btnFavorite"
+                android:nextFocusUp="@id/btnExitApp" />
         </LinearLayout>
     </LinearLayout>
 </layout>
