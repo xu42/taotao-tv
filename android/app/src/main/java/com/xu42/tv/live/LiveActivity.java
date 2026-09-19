@@ -9,6 +9,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
+import android.os.SystemClock;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
@@ -92,6 +93,13 @@ public class LiveActivity extends BaseActivity {
     private boolean isMenuShow = false;
     /** 正在给菜单灌数据：此时的列表选择回调是副作用，不是用户操作 */
     private boolean syncingMenu = false;
+
+    /** 返回键双击窗口：面板已弹出时，两次间隔小于它就直接退出应用 */
+    private static final long DOUBLE_BACK_MS = 1200L;
+    /** 上一次按返回键的时刻（SystemClock.elapsedRealtime） */
+    private long lastBackAt = 0L;
+    /** 面板里画质按钮的第一个 id，用于把「收藏」的上焦点接到画质行 */
+    private int firstHzButtonId = View.NO_ID;
 
     private FavoriteService favoriteService;
 
@@ -588,12 +596,34 @@ public class LiveActivity extends BaseActivity {
 
     // ------------------------------------------------------------------ 按键
 
+    /**
+     * 平板触屏：
+     *   点左半屏 -> 拉起切台菜单（分类 + 频道）
+     *   点右半屏 -> 打开设置面板（画质 / 收藏 / 退出），相当于遥控器的「设置」操作区
+     */
+    @Override
     public boolean dispatchTouchEvent(MotionEvent event) {
+        if (isExitDialogShowing) {
+            return super.dispatchTouchEvent(event);
+        }
         if (!isMenuShow && event.getAction() == MotionEvent.ACTION_DOWN) {
-            showMenu(false);
+            if (event.getX() < screenWidth() / 2f) {
+                showMenu(false);
+            } else {
+                showExitDialog();
+            }
             return true;
         }
         return super.dispatchTouchEvent(event);
+    }
+
+    /** 当前窗口宽度；拿不到时退回屏幕宽度 */
+    private int screenWidth() {
+        View decor = getWindow() == null ? null : getWindow().getDecorView();
+        if (null != decor && decor.getWidth() > 0) {
+            return decor.getWidth();
+        }
+        return getResources().getDisplayMetrics().widthPixels;
     }
 
     public boolean dispatchKeyEvent(KeyEvent event) {
@@ -604,7 +634,10 @@ public class LiveActivity extends BaseActivity {
 
         if (isExitDialogShowing) {
             if (keyCode == KeyEvent.KEYCODE_BACK) {
-                hideExitDialog();
+                // 长按产生的重复事件不算「连按」
+                if (event.getRepeatCount() == 0) {
+                    handleBackKey(true);
+                }
                 return true;
             }
             return super.dispatchKeyEvent(event);
@@ -651,10 +684,36 @@ public class LiveActivity extends BaseActivity {
             return nextChannel(-1);
         }
         if (keyCode == KeyEvent.KEYCODE_BACK) {
-            showExitDialog();
+            if (event.getRepeatCount() == 0) {
+                handleBackKey(false);
+            }
             return true;
         }
         return super.dispatchKeyEvent(event);
+    }
+
+    /**
+     * 返回键：
+     *   面板没开着 -> 弹出设置面板，并记下时刻
+     *   面板开着   -> {@link #DOUBLE_BACK_MS} 内再按一次 = 直接退出应用，否则收起面板
+     */
+    private void handleBackKey(boolean panelShowing) {
+        long now = SystemClock.elapsedRealtime();
+        if (panelShowing) {
+            if (now - lastBackAt <= DOUBLE_BACK_MS) {
+                exitApp();
+            } else {
+                hideExitDialog();
+            }
+            return;
+        }
+        lastBackAt = now;
+        showExitDialog();
+    }
+
+    private void exitApp() {
+        finishAffinity();
+        System.exit(0);
     }
 
     /** 菜单打开时的按键：左右切栏、上下选择由 ListView 自己处理 */
@@ -1008,10 +1067,39 @@ public class LiveActivity extends BaseActivity {
             return;
         }
         isExitDialogShowing = true;
+        updateDialogHeader();
         exitDialogBinding.exitDialogContainer.setVisibility(View.VISIBLE);
         setupHzListInExit();
         updateFavoriteButtonInDialog();
-        exitDialogBinding.btnCancel.post(() -> exitDialogBinding.btnCancel.requestFocus());
+        exitDialogBinding.btnClose.post(() -> exitDialogBinding.btnClose.requestFocus());
+    }
+
+    /** 面板顶部：当前频道 + 分类 + 正在用的源 */
+    private void updateDialogHeader() {
+        if (null == exitDialogBinding || null == currentLive) {
+            return;
+        }
+        exitDialogBinding.exitChannel.setText(displayNameOf(currentLive));
+
+        String group = "";
+        if (currentCategoryIndex >= 0 && currentCategoryIndex < categories.size()) {
+            group = categories.get(currentCategoryIndex).getName();
+        }
+        List<Vod> sources = currentLive.getSources();
+        if (null == sources || sources.isEmpty()) {
+            exitDialogBinding.exitSource.setText(group);
+            return;
+        }
+        String label = sources.get(Math.min(currentSourceIndex, sources.size() - 1)).getName();
+        StringBuilder sb = new StringBuilder();
+        if (null != group && group.length() > 0) {
+            sb.append(group).append(" · ");
+        }
+        sb.append(label);
+        if (sources.size() > 1) {
+            sb.append(" · 共 ").append(sources.size()).append(" 个源");
+        }
+        exitDialogBinding.exitSource.setText(sb.toString());
     }
 
     private void hideExitDialog() {
@@ -1036,12 +1124,10 @@ public class LiveActivity extends BaseActivity {
             updateFavoriteButtonInDialog();
             exitDialogBinding.btnFavorite.post(() -> exitDialogBinding.btnFavorite.requestFocus());
         });
-        exitDialogBinding.btnCancel.setOnClickListener(v -> hideExitDialog());
-        exitDialogBinding.btnExitApp.setOnClickListener(v -> {
-            finishAffinity();
-            System.exit(0);
-        });
-        exitDialogBinding.dialogBackdrop.setOnClickListener(v -> hideExitDialog());
+        exitDialogBinding.btnClose.setOnClickListener(v -> hideExitDialog());
+        exitDialogBinding.btnExitApp.setOnClickListener(v -> exitApp());
+        // 点卡片外的遮罩即关闭（卡片自身 clickable，点它不会穿到这里）
+        exitDialogBinding.exitDialogContainer.setOnClickListener(v -> hideExitDialog());
     }
 
     // ------------------------------------------------------------------ 数字键
@@ -1098,10 +1184,21 @@ public class LiveActivity extends BaseActivity {
         List<HzItem> hzItems = new ArrayList<>();
         if (null != videoQualityData) {
             try {
-                hzItems = JsonUtil.fromJson(videoQualityData, JsonTypes.HZ_LIST);
+                List<HzItem> parsed = JsonUtil.fromJson(videoQualityData, JsonTypes.HZ_LIST);
+                if (null != parsed) {
+                    hzItems = parsed;
+                }
             } catch (Exception ignore) {
             }
         }
+        // 网页侧没给画质时把整块（小标题 + 列表）都收起来，别在卡片里留一块空白
+        boolean hasHz = !hzItems.isEmpty();
+        exitDialogBinding.hzLabel.setVisibility(hasHz ? View.VISIBLE : View.GONE);
+        exitDialogBinding.hzListInExit.setVisibility(hasHz ? View.VISIBLE : View.GONE);
+        firstHzButtonId = View.NO_ID;
+        // 没有画质行时，「收藏」的上焦点回落到「关闭」；有画质行时会在下面改接到第一颗画质按钮
+        exitDialogBinding.btnFavorite.setNextFocusUpId(exitDialogBinding.btnClose.getId());
+
         BaseBindingAdapter hzAdapter = new BaseBindingAdapter<HzItem, ItemHzLiveBinding>(hzItems, R.layout.item_hz_live) {
             @Override
             public void doBindViewHolder(BaseViewHolder<ItemHzLiveBinding> holder, HzItem item) {
@@ -1123,8 +1220,12 @@ public class LiveActivity extends BaseActivity {
                             if (btn.getId() == View.NO_ID) {
                                 btn.setId(View.generateViewId());
                             }
-                            btn.setNextFocusUpId(exitDialogBinding.btnCancel.getId());
+                            btn.setNextFocusUpId(exitDialogBinding.btnClose.getId());
                             btn.setNextFocusDownId(exitDialogBinding.btnFavorite.getId());
+                            if (firstHzButtonId == View.NO_ID) {
+                                firstHzButtonId = btn.getId();
+                                exitDialogBinding.btnFavorite.setNextFocusUpId(firstHzButtonId);
+                            }
                         }
                     }
 
@@ -1158,6 +1259,8 @@ public class LiveActivity extends BaseActivity {
         loadingName = binding.loadingName;
         buildLoadingDots();
         setupListListeners();
+        // 平板：点菜单右边那块留白即收起菜单
+        binding.menuBlank.setOnClickListener(v -> hideMenu());
     }
 
     @Override

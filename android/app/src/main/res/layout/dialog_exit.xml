@@ -1,121 +1,117 @@
 <?xml version="1.0" encoding="utf-8"?>
 <layout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto">
+    xmlns:tools="http://schemas.android.com/tools">
 
     <data>
     </data>
 
-    <!-- 退出 / 操作对话框 - 左侧提示 + 右侧操作区（约 1/3 屏宽） -->
-    <LinearLayout
+    <!--
+        操作面板：垂直水平居中，风格参考 Netflix 电视端 —— 近黑圆角卡片，
+        焦点落到的按钮反白（白底黑字）。
+        电视端按「返回」键弹出（1.2 秒内连按两次直接退出应用）；
+        平板点右半屏也会弹出。
+    -->
+    <FrameLayout
         android:id="@+id/exitDialogContainer"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:orientation="horizontal"
-        android:visibility="gone"
+        android:background="#A6000000"
         android:clickable="true"
         android:focusable="true"
         android:focusableInTouchMode="true"
-        android:descendantFocusability="afterDescendants">
+        android:descendantFocusability="afterDescendants"
+        android:visibility="gone">
 
-        <!-- 左侧提示区域，点击关闭对话框 -->
         <LinearLayout
-            android:id="@+id/dialogBackdrop"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="2"
-            android:background="#80000000"
+            android:id="@+id/exitDialogCard"
+            android:layout_width="480dp"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:background="@drawable/dialog_card_bg"
             android:clickable="true"
             android:focusable="false"
             android:orientation="vertical"
-            android:gravity="center"
-            android:padding="16dp">
+            android:paddingLeft="34dp"
+            android:paddingRight="34dp"
+            android:paddingTop="30dp"
+            android:paddingBottom="24dp">
 
+            <!-- 当前频道 -->
             <TextView
-                android:id="@+id/exitTipTitle"
-                android:layout_width="wrap_content"
+                android:id="@+id/exitChannel"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="遥控器操作提示"
-                android:textColor="#FFB37A"
+                android:ellipsize="end"
+                android:gravity="center"
+                android:singleLine="true"
+                android:textColor="#FFFFFF"
                 android:textSize="24sp"
-                android:textStyle="bold" />
+                android:textStyle="bold"
+                tools:text="CCTV-13 新闻" />
 
             <TextView
-                android:id="@+id/exitTipText"
+                android:id="@+id/exitSource"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="7dp"
+                android:ellipsize="end"
+                android:gravity="center"
+                android:singleLine="true"
+                android:textColor="#8A8A8A"
+                android:textSize="14sp"
+                tools:text="央视 · 央视网 · 共 2 个源" />
+
+            <!-- 画质：网页侧提供了才显示 -->
+            <TextView
+                android:id="@+id/hzLabel"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="20dp"
-                android:text="上下左右：快速切台 / 移动焦点\n设置键：打开频道菜单（可切换源）\n数字键：跳转收藏栏对应序号"
-                android:textColor="#CCCCCC"
-                android:textSize="15sp"
-                android:lineSpacingExtra="6dp"
-                android:gravity="center" />
-        </LinearLayout>
+                android:text="画质"
+                android:textColor="#8A8A8A"
+                android:textSize="13sp"
+                android:visibility="gone" />
 
-        <!-- 右侧对话框内容（约 1/3 屏宽） -->
-        <LinearLayout
-            android:id="@+id/exitDialogContent"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:background="#E6000000"
-            android:orientation="vertical"
-            android:padding="16dp"
-            android:clickable="true"
-            android:focusable="true"
-            android:focusableInTouchMode="true"
-            android:descendantFocusability="afterDescendants">
-
-            <!-- 画质列表（页面提供画质时才会出现） -->
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/hzListInExit"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="10dp"
-                android:overScrollMode="never" />
+                android:layout_marginTop="8dp"
+                android:overScrollMode="never"
+                android:visibility="gone" />
 
             <Button
                 android:id="@+id/btnFavorite"
-                android:layout_width="match_parent"
-                android:layout_height="44dp"
-                android:layout_marginBottom="10dp"
-                android:background="@drawable/menu_button_background"
-                android:clickable="true"
-                android:focusable="true"
-                android:focusableInTouchMode="true"
-                android:text="收藏当前频道"
-                android:textColor="#FFFFFF"
-                android:textSize="16sp"
+                style="@style/DialogActionButton"
+                android:layout_marginTop="24dp"
                 android:nextFocusDown="@id/btnExitApp"
-                android:nextFocusUp="@id/btnCancel" />
+                android:nextFocusUp="@id/btnClose"
+                android:text="收藏当前频道" />
 
             <Button
                 android:id="@+id/btnExitApp"
-                android:layout_width="match_parent"
-                android:layout_height="44dp"
-                android:layout_marginBottom="10dp"
-                android:background="@drawable/menu_button_background"
-                android:clickable="true"
-                android:focusable="true"
-                android:focusableInTouchMode="true"
-                android:text="退出应用"
-                android:textColor="#FFFFFF"
-                android:textSize="16sp"
-                android:nextFocusDown="@id/btnCancel"
-                android:nextFocusUp="@id/btnFavorite" />
+                style="@style/DialogActionButton"
+                android:nextFocusDown="@id/btnClose"
+                android:nextFocusUp="@id/btnFavorite"
+                android:text="退出应用" />
 
             <Button
-                android:id="@+id/btnCancel"
-                android:layout_width="match_parent"
-                android:layout_height="44dp"
-                android:background="@drawable/menu_button_background"
-                android:clickable="true"
-                android:focusable="true"
-                android:focusableInTouchMode="true"
-                android:text="取消"
-                android:textColor="#CCCCCC"
-                android:textSize="16sp"
+                android:id="@+id/btnClose"
+                style="@style/DialogActionButton"
                 android:nextFocusDown="@id/btnFavorite"
-                android:nextFocusUp="@id/btnExitApp" />
+                android:nextFocusUp="@id/btnExitApp"
+                android:text="关闭" />
+
+            <TextView
+                android:id="@+id/exitHint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:gravity="center"
+                android:lineSpacingExtra="3dp"
+                android:text="连按两次「返回」键可直接退出\n数字键可跳转收藏频道"
+                android:textColor="#6B6B6B"
+                android:textSize="12sp" />
         </LinearLayout>
-    </LinearLayout>
+    </FrameLayout>
 </layout>

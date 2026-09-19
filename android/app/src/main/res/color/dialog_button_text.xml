@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 操作面板按钮文字色：跟着上面的白底一起反色，白底时必须用黑字 -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <item android:state_focused="true" android:color="#FF0A0A0A" />
+    <item android:state_pressed="true" android:color="#FF0A0A0A" />
+    <item android:color="#FFEDEDED" />
+</selector>

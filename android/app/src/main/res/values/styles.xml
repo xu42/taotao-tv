@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        操作面板按钮（风格参考 Netflix 电视端）：
+        未选中 = 半透明底 + 细描边 + 浅灰字；焦点落上去反白（白底黑字）。
+    -->
+    <style name="DialogActionButton">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">46dp</item>
+        <item name="android:layout_marginBottom">10dp</item>
+        <item name="android:background">@drawable/dialog_button_bg</item>
+        <item name="android:textColor">@color/dialog_button_text</item>
+        <item name="android:textSize">16sp</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:gravity">center</item>
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
+        <item name="android:focusableInTouchMode">true</item>
+    </style>
+</resources>

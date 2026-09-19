@@ -95,7 +95,8 @@
         </FrameLayout>
 
         <!--
-            切台菜单：左边是分类（收藏 / 央视 / 卫视 / 各省），右边是该分类下的频道。
+            切台菜单：整块只占屏幕左半边（左栏分类 / 右栏频道），右半边完全留白 ——
+            直播画面照常可见，点右半屏空白处即收起菜单。
             遥控器：左右在两栏之间移动，上下在本栏内移动，OK 播放并收起菜单。
         -->
         <LinearLayout
@@ -103,113 +104,136 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:orientation="horizontal"
-            android:background="#CC07090D"
-            android:visibility="gone"
-            android:clickable="true"
-            android:focusable="true">
+            android:visibility="gone">
 
-            <!-- 左栏：分类 -->
+            <!-- 左半边：菜单本体（clickable 只为了吃掉空白处的点击，别让它穿到下面的播放器） -->
             <LinearLayout
-                android:layout_width="320dp"
-                android:layout_height="match_parent"
-                android:orientation="vertical"
-                android:background="#F0141A24"
-                android:paddingTop="26dp"
-                android:paddingBottom="26dp">
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:paddingLeft="26dp"
-                    android:paddingRight="26dp"
-                    android:paddingBottom="12dp"
-                    android:text="频道分类"
-                    android:textColor="#7F8798"
-                    android:textSize="14sp" />
-
-                <ListView
-                    android:id="@+id/categoryList"
-                    android:layout_width="match_parent"
-                    android:layout_height="0dp"
-                    android:layout_weight="1"
-                    android:divider="@null"
-                    android:dividerHeight="0dp"
-                    android:listSelector="@drawable/live_menu_selector"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:descendantFocusability="afterDescendants" />
-            </LinearLayout>
-
-            <!-- 右栏：该分类下的频道 -->
-            <LinearLayout
+                android:id="@+id/menuPanel"
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
                 android:layout_weight="1"
-                android:orientation="vertical"
-                android:paddingTop="26dp"
-                android:paddingBottom="18dp"
-                android:paddingLeft="28dp"
-                android:paddingRight="36dp">
+                android:background="#F2070A10"
+                android:clickable="true"
+                android:focusable="false"
+                android:orientation="horizontal">
 
+                <!-- 左栏：分类 -->
                 <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical">
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="0.52"
+                    android:orientation="vertical"
+                    android:background="#FF10151F"
+                    android:paddingTop="24dp"
+                    android:paddingBottom="24dp">
 
                     <TextView
-                        android:id="@+id/categoryTitle"
-                        android:layout_width="wrap_content"
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:textColor="#FFFFFF"
-                        android:textSize="22sp"
-                        tools:text="央视" />
-
-                    <TextView
-                        android:id="@+id/categoryCount"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginLeft="12dp"
+                        android:paddingLeft="20dp"
+                        android:paddingRight="20dp"
+                        android:paddingBottom="10dp"
+                        android:text="频道分类"
                         android:textColor="#7F8798"
-                        android:textSize="14sp"
-                        tools:text="19 个频道" />
+                        android:textSize="14sp" />
 
-                    <TextView
-                        android:id="@+id/sourceHint"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
+                    <ListView
+                        android:id="@+id/categoryList"
+                        android:layout_width="match_parent"
+                        android:layout_height="0dp"
                         android:layout_weight="1"
-                        android:gravity="right"
-                        android:textColor="#FF8A3D"
-                        android:textSize="15sp"
-                        tools:text="央视网 · 2 个源" />
+                        android:divider="@null"
+                        android:dividerHeight="0dp"
+                        android:listSelector="@drawable/live_menu_selector"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:descendantFocusability="afterDescendants" />
                 </LinearLayout>
 
-                <ListView
-                    android:id="@+id/channelList"
-                    android:layout_width="match_parent"
-                    android:layout_height="0dp"
+                <!-- 右栏：该分类下的频道 -->
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:layout_marginTop="10dp"
-                    android:divider="@null"
-                    android:dividerHeight="0dp"
-                    android:listSelector="@drawable/live_menu_selector"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:descendantFocusability="afterDescendants" />
+                    android:orientation="vertical"
+                    android:paddingTop="24dp"
+                    android:paddingBottom="16dp"
+                    android:paddingLeft="20dp"
+                    android:paddingRight="22dp">
 
-                <TextView
-                    android:id="@+id/menuHint"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="10dp"
-                    android:text="▲▼ 选择    ◀▶ 切栏    OK 播放    设置键 收藏    播放中 ◀▶ 换源"
-                    android:textColor="#6B7385"
-                    android:textSize="13sp" />
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+
+                        <TextView
+                            android:id="@+id/categoryTitle"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:textColor="#FFFFFF"
+                            android:textSize="22sp"
+                            tools:text="央视" />
+
+                        <TextView
+                            android:id="@+id/categoryCount"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginLeft="12dp"
+                            android:textColor="#7F8798"
+                            android:textSize="14sp"
+                            tools:text="19 个频道" />
+
+                        <TextView
+                            android:id="@+id/sourceHint"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:gravity="right"
+                            android:ellipsize="end"
+                            android:singleLine="true"
+                            android:textColor="#FF8A3D"
+                            android:textSize="15sp"
+                            tools:text="央视网 · 2 个源" />
+                    </LinearLayout>
+
+                    <ListView
+                        android:id="@+id/channelList"
+                        android:layout_width="match_parent"
+                        android:layout_height="0dp"
+                        android:layout_weight="1"
+                        android:layout_marginTop="10dp"
+                        android:divider="@null"
+                        android:dividerHeight="0dp"
+                        android:listSelector="@drawable/live_menu_selector"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:descendantFocusability="afterDescendants" />
+
+                    <TextView
+                        android:id="@+id/menuHint"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:lineSpacingExtra="2dp"
+                        android:text="▲▼ 选择   ◀▶ 切栏   OK 播放\n设置键 收藏   播放中 ◀▶ 换源"
+                        android:textColor="#6B7385"
+                        android:textSize="12sp" />
+                </LinearLayout>
             </LinearLayout>
+
+            <!-- 右半边：留白，点一下收起菜单 -->
+            <View
+                android:id="@+id/menuBlank"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:background="@android:color/transparent"
+                android:clickable="true"
+                android:focusable="false" />
         </LinearLayout>
 
-        <!-- 退出对话框 -->
+        <!-- 操作 / 设置面板 -->
         <include
             android:id="@+id/exitDialog"
             layout="@layout/dialog_exit" />
