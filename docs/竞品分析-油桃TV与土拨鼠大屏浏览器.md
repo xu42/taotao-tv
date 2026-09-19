@@ -314,19 +314,24 @@ filesDir/tv-web/                 ← WebView 实际加载目录
 |---|---|---|---|---|
 | 沉浸式全屏 | ❌ | ✅ | ❌ 只有 FLAG_FULLSCREEN | **建议补** |
 | 后台停播 | ❌ | ✅ | ⚠️ 无效实现 | **建议修** |
-| 返回键双击退出 | ✅（无时窗） | ✅（无时窗） | ✅（1.2s 时窗） | 我们更好，保留 |
-| 退出面板居中卡片 | ❌ 右侧分栏 | ❌ 左右分栏 + 二维码 | ✅ 居中圆角卡片 | 我们更好，保留 |
-| 双列切台菜单 | ❌ 单列 ListView | ✅（可选单/双列） | ✅（权重自适应） | 保留 |
-| 频道行 ▶ 播放标记 / ♡ 收藏 | 部分 | ✅ | ✅ | 一致 |
+| 返回键双击退出 | ✅（无时窗） | ✅（无时窗） | ✅（1.2s 时窗 + 胶囊提示） | 我们更好，保留 |
+| 退出提示形态 | ❌ 右侧分栏面板 | ❌ 左右分栏 + 二维码 | ✅ 胶囊提示，居中靠下不贴底 | 我们更好（原居中圆角面板已删） |
+| 双列切台菜单 | ❌ 单列 ListView | ✅（可选单/双列） | ✅（权重自适应 + 非焦点栏压暗） | 保留 |
+| 频道行 ▶ 播放标记 / ♡ 收藏 | 部分 | ✅ | ▶ 保留；♡ 已删（收藏功能取消） | 已简化 |
 | 分类行计数 / 焦点条 | ❌ | ❌ | ✅ | 我们更好 |
-| 收藏数字键直选 | ✅ | ✅ | ✅ | 一致 |
-| 画质（HZLIST）交给页面 JS | ✅ | ✅ | ✅ | 一致 |
+| 收藏数字键直选 | ✅ | ✅ | ❌ 已取消收藏 | 已简化 |
+| 画质（HZLIST）交给页面 JS | ✅ | ✅ | 原生面板已删，页面 JS 仍在（无原生入口） | 已简化 |
 | 多源容灾（源切换/探测） | ❌ | ❌ | ✅ | **我们独有** |
 | 手机远控 | ❌ | ✅ | ❌ | 暂不建议 |
 | 开机自启 | ❌ | ✅ | ❌ | 可选 |
 | X5 / WebView 热升级 | ✅ | ✅ | ❌ | 不建议 |
 | 配置拉取 / 崩溃上报 | ✅ | ❌ | ❌ | 方向一致 |
 | Git 热更新 web 包 | ✅ (tv.utao.tv) | ✅ (gitee) | ❌ 纯本地 | 不建议 |
+
+> 注：2026-09-19 又砍掉了**收藏 / 观看历史 / 画质面板**（启动固定 CCTV-1、不再建任何本地数据库、
+> 退出改「胶囊提示 + 1.2s 二次返回」），上表中标「已简化 / 已取消」的行即为此轮改动；详见 `android/CHANGELOG.md`。
+> 「退出面板居中卡片」曾是我们的优势项，现已主动放弃——理由是画质切换实操无反应、收藏与续播都已取消，
+> 面板只剩干扰，不如把交互压到最短路径。
 
 > 值得一提：**多源合并与容灾（`sourceRank` / `probeVideoElement` / `switchSource`）是我们独有的能力**，
 > 两个原版都没有。这块我们已经领先，不要为了「对齐原作者」而退回去。
@@ -509,10 +514,19 @@ protected void onLeaveBackground(long backgroundMillis){}  // onResume 里调，
 | 历史未被污染 | `force-stop` 后冷启动 | ✅ 仍续播 CCTV-13 |
 | 后台不误换源 | 观察 logcat 有无 `onSourceFailed` | ✅ 无 |
 | 菜单半透明 | 截图对比左右栏与画面透视 | ✅ 见上图 |
-| 双击返回退出 | 开面板后 1.2 s 内再按返回 | ✅ 进程退出，回到桌面 |
-| 设置面板居中 | 截图 | ✅ 水平垂直居中，焦点按钮反白 |
+| 二次返回退出 | 按一次返回弹提示，1.2 s 内再按一次 | ✅ 进程退出，回到桌面 |
 
-![设置面板：居中圆角卡片](img/exit-panel-centered.png)
+![设置面板：居中圆角卡片（历史存档）](img/exit-panel-centered.png)
+
+> ⚠️ **勘误（2026-09-19）——上表「设置面板居中」一行所对应的居中圆角设置面板已整体删除。**
+> 画质切换实操无反应、收藏与「记住上次频道」已取消、退出本就靠二次返回，面板只剩干扰。
+> 现在按一次返回键弹出的是**胶囊提示**「再按一次「返回」键退出应用」（水平居中、垂直靠下但不贴底，
+> 底部间距按屏幕高度 16% 动态计算），1.2 秒内再按一次直接退出，提示 2.4 秒后自动淡出；
+> **平板点右半屏等同于按一次返回键**（不再弹面板）。
+> `layout/dialog_exit.xml`、`DialogActionButton` 样式、画质列表与 `BaseBindingAdapter` 家族均已删除，
+> 上图仅作历史存档。上表中「设置面板居中」一行、下文 `adb` 小抄里
+> 「右半屏开设置面板」与「第一次按必须处于面板未打开状态」两句，都已被新交互取代。
+> 同日还顺带移除了收藏 / 观看历史 / Room 数据库（启动固定 CCTV-1），详见 `android/CHANGELOG.md`。
 
 ### 9.5 复现用的 adb 小抄
 
@@ -524,14 +538,14 @@ adb logcat -c && adb shell am start -n com.xu42.tv.live/.LiveActivity
 adb shell svc power stayon true && adb shell input keyevent KEYCODE_WAKEUP
 adb shell screencap -p /sdcard/s.png && adb pull /sdcard/s.png /tmp/s.png
 
-# 平板触屏：左半屏开菜单 / 右半屏开设置面板
+# 平板触屏：左半屏开菜单 / 右半屏等同按一次返回键（连点两次 = 退出）
 adb shell input tap 480 600
 
 # 后台停播验证
 adb shell input keyevent KEYCODE_HOME && sleep 5 && \
   adb shell am start -n com.xu42.tv.live/.LiveActivity
 
-# 双击返回退出（第一次按必须处于「面板未打开」状态才会开始计时）
+# 二次返回退出：第一下弹出提示，1.2 s 内再按一次即退出
 adb shell input keyevent KEYCODE_BACK && sleep 0.6 && \
-  adb shell input keyevent KEYCODE_BACK && sleep 0.4 && adb shell input keyevent KEYCODE_BACK
+  adb shell input keyevent KEYCODE_BACK
 ```

@@ -131,6 +131,7 @@
                     android:paddingBottom="24dp">
 
                     <TextView
+                        android:id="@+id/categoryHeader"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:paddingLeft="20dp"
@@ -166,6 +167,7 @@
                     android:paddingRight="22dp">
 
                     <LinearLayout
+                        android:id="@+id/channelHeader"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="horizontal"
@@ -236,7 +238,7 @@
                         android:shadowDx="0"
                         android:shadowDy="1"
                         android:shadowRadius="3"
-                        android:text="▲▼ 选择   ◀▶ 切栏   OK 播放\n设置键 收藏   播放中 ◀▶ 换源"
+                        android:text="▲▼ 选择   ◀▶ 切栏   OK 播放\n设置键 收起   播放中 ◀▶ 换源"
                         android:textColor="#8A93A6"
                         android:textSize="12sp" />
                 </LinearLayout>
@@ -253,9 +255,26 @@
                 android:focusable="false" />
         </LinearLayout>
 
-        <!-- 操作 / 设置面板 -->
-        <include
-            android:id="@+id/exitDialog"
-            layout="@layout/dialog_exit" />
+        <!--
+            退出提示：按一次返回键时出现。
+            水平居中、垂直靠下但不贴底（太贴底会被视频字幕条挤在一起，也不像提示）。
+        -->
+        <TextView
+            android:id="@+id/exitHint"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal|bottom"
+            android:layout_marginBottom="132dp"
+            android:background="@drawable/toast_bg"
+            android:clickable="false"
+            android:focusable="false"
+            android:paddingLeft="30dp"
+            android:paddingRight="30dp"
+            android:paddingTop="17dp"
+            android:paddingBottom="17dp"
+            android:text="再按一次「返回」键退出应用"
+            android:textColor="#FFFFFF"
+            android:textSize="19sp"
+            android:visibility="gone" />
     </FrameLayout>
 </layout>

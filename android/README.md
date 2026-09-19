@@ -3,6 +3,8 @@
 ## 项目简介
 这是一个 Android TV 应用项目，使用 Java 开发，采用 DataBinding 架构。**只有「直播」一个模块**，应用启动即进入直播页。
 
+应用**不保存任何本地状态**：没有收藏功能、不记忆上次频道，因此也**没有任何数据库**（Room/SQLite 已整体移除）。
+
 ## 技术栈
 - **语言**: Java
 - **架构**: DataBinding
@@ -16,40 +18,45 @@
 app/src/main/
 ├── java/com/xu42/tv/live/
 │   ├── LiveActivity.java           # 直播页面（唯一 Activity，也是启动入口）
-│   ├── BaseActivity.java           # Activity基类
+│   ├── BaseActivity.java           # Activity基类（沉浸式全屏 / 前后台钩子）
 │   ├── MyApplication.java          # Application
-│   ├── dao/                        # 数据库操作（收藏 / 历史）
 │   ├── domain/                     # 数据模型
 │   ├── impl/                       # WebViewClient 等实现
-│   ├── service/                    # 服务层（频道数据 / 崩溃日志）
+│   ├── service/                    # 服务层（频道数据）
 │   ├── util/                       # 工具类（AppConfig 为地址唯一出处）
 │   └── utils/                      # 工具类
 ├── res/
 │   ├── layout/                     # 布局文件
-│   │   ├── activity_live.xml       # 直播页面布局（含二级分类菜单容器）
+│   │   ├── activity_live.xml       # 直播页面布局（二级分类菜单容器 + 退出提示）
 │   │   ├── item_live_category.xml  # 直播分类行（左侧列表）
-│   │   ├── item_live_channel.xml   # 直播频道行（右侧列表）
-│   │   └── dialog_exit.xml         # 设置面板布局（居中卡片，返回键/右半屏呼出）
+│   │   └── item_live_channel.xml   # 直播频道行（右侧列表）
 │   ├── values/                     # 资源值
 │   └── drawable/                   # 图片资源
 └── assets/                         # 静态资源（由 scripts/build-web.js 生成，不入库）
     └── tv-web/                     # Web页面资源（直播页面）
 ```
 
+> 本工程**没有** `dao/` 目录、没有 Room 依赖、没有 `schemas/`：收藏与观看历史已删除，启动固定播 CCTV-1。
+
 ## 核心页面说明
 
 ### LiveActivity（直播页面 · 唯一页面）
-- **启动即播**：读取观看历史，有记录就续播上次的频道与源；没有记录就默认播 CCTV-1
+- **启动即播**：固定播放 **CCTV-1**，不读取任何观看记录（无记忆需求，故无数据库）
 - 电视直播功能，**二级分类菜单**：左侧是分类（央视 / 卫视 / 各省地方台…），右侧是该分类下的频道
-- 菜单只占**左半边**，右半边留白（直播画面照常可见）
+- 菜单只占**左半边**，右半边留白（直播画面照常可见，点留白收起菜单）
+- **两栏焦点区分**：按左右键切栏时，焦点所在的栏保持亮度，另一栏压暗到 `MENU_DIM_ALPHA`(0.4)，
+  由 `applyMenuColumnHighlight()` 统一切换（表头与列表一起变），解决「两栏长得一样、看不出焦点在哪」的问题
 - 每个频道可以有 **1 个或多个源**，列表里不再暴露源（只显示「N 源」角标），默认播放央视网
 - **自动容灾**：默认源播放失败（主帧加载报错 / HTTP ≥400 / 超时 / 页面里探测不到播放器）时，自动切到该频道的下一个源，并 toast 提示「播放失败，自动切到…」
 - **手动换源**：播放中按左右键即可在同一频道的多个源之间循环切换
 - 上/下键在当前分类内快速切台；按 MENU / SETTINGS / OK 呼出二级分类菜单
 - 切台期间显示「加载中」跳动圆点遮罩，避免露出未渲染完的网页
-- **设置面板**：按返回键弹出（居中，Netflix 电视端风格），内含画质 / 收藏 / 退出 / 关闭；
-  **1.2 秒内连按两次返回键 = 直接退出应用**
-- **平板触屏**：点左半屏拉出切台菜单、点右半屏打开设置面板、点菜单右侧留白收起菜单
+- **退出交互**：按返回键（或平板点右半屏）时，屏幕**水平居中、垂直靠下但不贴底**浮出胶囊提示
+  「再按一次「返回」键退出应用」；**1.2 秒内再按一次 = 直接退出应用**，否则提示 2.4 秒后自动淡出
+  - 提示底部间距在 `bind()` 里按屏幕高度 **动态取 16%**，保证平板（约 600dp 高）和电视（1080p）观感一致
+  - 提示 `clickable=false` / `focusable=false`，不会抢焦点、不会挡住遥控器操作
+  - 长按返回键产生的重复事件已过滤（`getRepeatCount() != 0`），不会误退出
+- **平板触屏**：点左半屏拉出切台菜单、点右半屏等同按一次返回键、点菜单右侧留白收起菜单
 
 ## 开发规范
 
@@ -61,7 +68,7 @@ app/src/main/
 
 示例：
 ```java
-protected ActivityMainBinding binding;
+protected ActivityLiveBinding binding;
 
 @Override
 protected void createInit() {
@@ -91,7 +98,7 @@ protected void createInit() {
 ### 3. 按键处理规范
 - 重写`dispatchKeyEvent`方法处理按键事件
 - 区分按键按下（ACTION_DOWN）和抬起（ACTION_UP）
-- 返回键需要特殊处理，实现双击退出或弹出对话框
+- 返回键需要特殊处理：本应用用「一次提示 + 1.2 秒内二次退出」，不再弹任何对话框
 
 示例：
 ```java
@@ -102,7 +109,10 @@ public boolean dispatchKeyEvent(KeyEvent event) {
     }
     int keyCode = event.getKeyCode();
     if (keyCode == KeyEvent.KEYCODE_BACK) {
-        showExitDialog();
+        // 过滤长按产生的重复事件，否则长按返回键会直接退出
+        if (event.getRepeatCount() == 0) {
+            handleBackKey(isExitHintShowing);
+        }
         return true;
     }
     return super.dispatchKeyEvent(event);
@@ -122,6 +132,8 @@ ValueUtil.putString(context, "key", "value");
 String value = ValueUtil.getString(context, "key", "defaultValue");
 ```
 
+> 直播频道不落任何持久化状态，`ValueUtil` 目前仅供其他通用场景使用。
+
 ### 6. 日志规范
 使用`LogUtil`进行日志输出：
 ```java
@@ -137,20 +149,20 @@ ToastUtils.show(context, "提示信息", Toast.LENGTH_SHORT);
 
 ## 功能特性
 
-### 1. 设置面板（`dialog_exit.xml`）
-- 按返回键弹出，**垂直水平居中**的 480dp 近黑圆角卡片（风格参考 Netflix 电视端）
-- 顶部显示当前频道 + 分类 + 正在用的源；有画质数据时多一行画质按钮
-- 按钮：收藏当前频道 / 退出应用 / 关闭，焦点按钮**反白**（白底黑字，见 `@style/DialogActionButton`）
-- **1.2 秒内连按两次返回键 = 直接退出应用**；超过 1.2 秒再按只收起面板
-- 长按返回键产生的重复事件会被过滤（`getRepeatCount() != 0`），不会误退出
+### 1. 退出交互（`exitHint`）
+- 按返回键或（平板）点右半屏，屏幕上浮出胶囊提示「再按一次「返回」键退出应用」
+- 提示由 `res/drawable/toast_bg.xml` 提供近黑圆角背景，淡入 150ms、淡出 180ms
+- **1.2 秒内再按一次 = 直接退出应用**；超时由 `MSG_HIDE_EXIT_HINT` 在 2.4 秒后自动收起
+- 打开切台菜单（`showMenu()`）会先把提示收掉，避免两块 UI 重叠
+- 已过滤长按返回键产生的重复事件（`getRepeatCount() != 0`），不会误退出
 
 ### 2. 直播功能与触屏
-- 启动即播：优先续播上次频道，无记录则播 CCTV-1
+- 启动即播：固定 CCTV-1（不记忆频道、不写历史）
 - 二级分类菜单：左分类 / 右频道，遥控器上下切分类、左右进频道；**只占左半边，右侧留白**
+- 左右切栏时非焦点栏压暗（`applyMenuColumnHighlight()`），焦点位置一目了然
 - 一个频道多个源，默认央视网，失败自动切换，也可手动左右键换源
 - 支持遥控器上下键在当前分类内快速切台
-- **触屏**：点左半屏拉出菜单、点右半屏打开设置面板、点菜单右侧留白收起菜单
-- 记录观看历史（含上次使用的源）与收藏
+- **触屏**：点左半屏拉出菜单、点右半屏等同按返回键、点菜单右侧留白收起菜单
 
 ## 编译和运行
 
@@ -214,7 +226,7 @@ Release 构建已开启，无需额外参数：
 - `packaging.resources.excludes`：剔除 `META-INF/*`、`kotlin/**`、`DebugProbesKt.bin` 等构建元数据
 - `dependenciesInfo includeInApk false`：不写入依赖信息
 
-当前 Release 通用包约 **782 KB**（优化前 3.6 MB）。
+当前 Release 通用包约 **660 KB**（移除 Room 与设置面板后进一步下降，优化前 3.6 MB）。
 
 ### ⚠️ 开了 R8 就必须实跑 release 包
 
@@ -247,8 +259,23 @@ adb logcat -d | grep -A 20 "FATAL EXCEPTION"
 5. **焦点处理**: TV应用需要特别注意焦点处理，确保遥控器可以正常导航
 6. **assets 不入库**: `android/app/src/main/assets/tv-web` 由 `scripts/build-web.js` 生成，仓库里不提交
 7. **零远端依赖**: 除播放地址本身外，应用不发起任何自建服务端请求。新增代码**不得**引入 `api.tv.xu42.com` 一类的远端调用，数据一律内置在 `assets/` 中。
+8. **零本地存储**: 不要为了「记住上次频道」「收藏」之类需求重新引入数据库；应用的设计前提是无状态启动。
 
 ## 更新日志
+
+### 未发布 (2026-09-19) - 交互极简：菜单焦点区分 / 去掉收藏与历史 / 退出改提示
+- ✅ **切台菜单两栏焦点区分**：新增 `menuColumn` + `applyMenuColumnHighlight()`，
+  非焦点栏（含表头与列表）压暗到 `0.4f`，左右键切栏时焦点位置一目了然
+- ✅ **取消收藏功能、取消「记住上次频道」**：启动固定 `UpdateService.getDefaultChannel()`（CCTV-1）
+- ✅ **整体移除 Room / SQLite**：删除 `dao/`（`AppDatabase` / `Favorite` / `FavoriteDao` / `History` / `HistoryDao` / `HistoryDaoX`）、
+  `service/FavoriteService`、`schemas/`、Room 依赖与混淆规则；`Vod.isFavorite`、`JsonTypes.HZ_LIST` 一并清理
+- ✅ **移除设置面板**：删除 `layout/dialog_exit.xml`、`drawable/dialog_card_bg.xml`、`drawable/dialog_button_bg.xml`、
+  `color/dialog_button_text.xml`、`values/styles.xml`(`DialogActionButton`)、`layout/item_hz_live.xml` 与
+  `impl/BaseBindingAdapter|BaseViewHolder|IBaseBindingPresenter`、`domain/HzItem`
+- ✅ **退出改为提示 + 二次返回**：新增 `res/layout` 内 `exitHint` 胶囊提示
+  （水平居中、垂直靠下但不贴底，底部间距按屏幕高度 16% 动态计算），
+  1.2 秒内再按一次返回直接退出，提示 2.4 秒自动淡出
+- ✅ Release 包从约 782 KB 降到约 **660 KB**
 
 ### v1.2.0 (2026-09-18)
 - ✅ **移除影视（点播）模块**：删除 `MainActivity` / `BaseWebViewActivity` / 影视相关 domain、layout、网页与适配源，应用首页即直播页
@@ -278,4 +305,3 @@ adb logcat -d | grep -A 20 "FATAL EXCEPTION"
 
 ## 联系方式
 如有问题，请提交Issue或联系开发团队。
-

@@ -20,9 +20,6 @@ public class Vod {
    /** 该频道的全部播放源，第 0 个是默认源；单源频道长度为 1 */
    private List<Vod> sources;
 
-   // 添加收藏状态字段
-   private boolean isFavorite = false;
-
     public String getName() {
         return name;
     }
@@ -75,14 +72,5 @@ public class Vod {
     /** 源数量，最少按 1 计 */
     public int sourceCount() {
         return (null == sources || sources.isEmpty()) ? 1 : sources.size();
-    }
-    
-    // 收藏状态的getter和setter
-    public boolean isFavorite() {
-        return isFavorite;
-    }
-    
-    public void setFavorite(boolean favorite) {
-        isFavorite = favorite;
     }
 }

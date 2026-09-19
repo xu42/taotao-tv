@@ -38,17 +38,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-import com.xu42.tv.live.dao.HistoryDaoX;
 import com.xu42.tv.live.databinding.ActivityLiveBinding;
-import com.xu42.tv.live.databinding.DialogExitBinding;
-import com.xu42.tv.live.databinding.ItemHzLiveBinding;
-import com.xu42.tv.live.domain.HzItem;
 import com.xu42.tv.live.domain.live.Live;
 import com.xu42.tv.live.domain.live.Vod;
-import com.xu42.tv.live.impl.BaseBindingAdapter;
-import com.xu42.tv.live.impl.BaseViewHolder;
 import com.xu42.tv.live.impl.WebViewClientImpl;
-import com.xu42.tv.live.service.FavoriteService;
 import com.xu42.tv.live.service.UpdateService;
 import com.xu42.tv.live.util.FileUtil;
 import com.xu42.tv.live.util.HttpUtil;
@@ -59,18 +52,21 @@ import com.xu42.tv.live.util.Util;
 import com.xu42.tv.live.utils.ToastUtils;
 
 /**
- * 电视直播。
+ * 电视直播（全应用唯一页面）。
  *
  * 播放时：
  *   上下   上一个 / 下一个频道（在当前分类内循环）
  *   左右   切换这个台的下一个 / 上一个源（默认央视网，失败会自动降级）
- *   OK     打开切台菜单
- *   数字键 跳到「收藏」分组的第 N 个频道
- *   返回   退出确认
+ *   OK / 设置键 / 点左半屏   打开切台菜单
+ *   返回   第一次弹「再按一次退出」提示，1.2 秒内再按一次才真的退出
  *
  * 切台菜单（二级分类）：
- *   左栏是分类（收藏 / 央视 / 卫视 / 各省），右栏是该分类下的频道。
- *   左右在两栏间移动，上下在本栏内移动，OK 播放并收起菜单，设置键收藏。
+ *   左栏是分类（央视 / 卫视 / 各省），右栏是该分类下的频道。
+ *   左右在两栏间移动（当前有焦点的那一栏高亮，另一栏变暗），上下在本栏内移动，
+ *   OK 播放并收起菜单，返回 / 设置键收起菜单。
+ *
+ * 平板触屏：
+ *   点左半屏 = 打开切台菜单；点右半屏 = 相当于按一次返回键（连点两次即退出）
  */
 public class LiveActivity extends BaseActivity {
     protected String TAG = "LiveActivity";
@@ -85,23 +81,26 @@ public class LiveActivity extends BaseActivity {
     private static int currentCategoryIndex = 0;
     private static int currentChannelIndex = 0;
 
-    /** 全量分组（收藏 + 归一化后的分类） */
+    /** 全量分组（归一化后的分类） */
     private final List<Live> categories = new ArrayList<>();
 
-    private DialogExitBinding exitDialogBinding;
-    private boolean isExitDialogShowing = false;
     private boolean isMenuShow = false;
     /** 正在给菜单灌数据：此时的列表选择回调是副作用，不是用户操作 */
     private boolean syncingMenu = false;
 
-    /** 返回键双击窗口：面板已弹出时，两次间隔小于它就直接退出应用 */
+    // ---------------------------------------------------------------- 返回键退出
+    /** 连按两次返回键的窗口 */
     private static final long DOUBLE_BACK_MS = 1200L;
+    /** 「再按一次返回键退出」提示的停留时长 */
+    private static final long EXIT_HINT_MS = 2400L;
     /** 上一次按返回键的时刻（SystemClock.elapsedRealtime） */
     private long lastBackAt = 0L;
-    /** 面板里画质按钮的第一个 id，用于把「收藏」的上焦点接到画质行 */
-    private int firstHzButtonId = View.NO_ID;
+    private boolean isExitHintShowing = false;
 
-    private FavoriteService favoriteService;
+    /** 菜单当前有焦点的那一栏：0 = 左栏分类，1 = 右栏频道 */
+    private int menuColumn = 1;
+    /** 没有焦点的那一栏整体压暗，用户一眼能看出左右键切到了哪一栏 */
+    private static final float MENU_DIM_ALPHA = 0.4f;
 
     // ---------------------------------------------------------------- 频道加载中动画
     /** 跳动的圆点数量 */
@@ -242,13 +241,12 @@ public class LiveActivity extends BaseActivity {
     protected void createInit() {
         bind();
         UpdateService.initTvData();
-        favoriteService = FavoriteService.getInstance(this);
 
+        // 不做任何观看记录：每次启动都是默认频道 CCTV-1
         if (null == currentLive) {
-            // 记忆上次看的频道；没有记录时默认 CCTV-1
-            currentLive = HistoryDaoX.currentChannel(this);
+            currentLive = UpdateService.getDefaultChannel();
             currentSourceIndex = UpdateService.sourceIndexOf(
-                    currentLive, HistoryDaoX.currentChannelUrl(this));
+                    currentLive, null == currentLive ? null : currentLive.getUrl());
         }
         if (null == currentLive) {
             ToastUtils.show(this, "频道数据加载失败，请检查网络后重试", Toast.LENGTH_SHORT);
@@ -268,7 +266,7 @@ public class LiveActivity extends BaseActivity {
     /** 后台加载频道数据，回主线程构建分类与菜单 */
     private void initData() {
         new Thread(() -> {
-            List<Live> result = UpdateService.getByLivesWithFavorites(this);
+            List<Live> result = UpdateService.getByLives();
             runOnUiThread(() -> {
                 categories.clear();
                 categories.addAll(result);
@@ -351,6 +349,7 @@ public class LiveActivity extends BaseActivity {
     private static final int MSG_LOAD_WATCHDOG = 4;
     private static final int MSG_VIDEO_PROBE = 5;
     private static final int MSG_HIDE_LOADING = 6;
+    private static final int MSG_HIDE_EXIT_HINT = 7;
 
     private Handler handler = new Handler(Looper.getMainLooper()) {
         @Override
@@ -376,6 +375,9 @@ public class LiveActivity extends BaseActivity {
                     break;
                 case MSG_HIDE_LOADING:
                     doHideLoading();
+                    break;
+                case MSG_HIDE_EXIT_HINT:
+                    hideExitHint();
                     break;
                 default:
                     break;
@@ -590,7 +592,7 @@ public class LiveActivity extends BaseActivity {
         }
         currentChannelIndex = index;
         currentLive = vods.get(index);
-        // 收藏里的条目记住了当时看的那一路源，普通频道用默认源
+        // 频道默认播第 1 路源
         currentSourceIndex = UpdateService.sourceIndexOf(currentLive, currentLive.getUrl());
         ToastUtils.show(this, currentLive.getName(), Toast.LENGTH_SHORT);
         startLoad(currentSourceIndex, false);
@@ -651,8 +653,8 @@ public class LiveActivity extends BaseActivity {
                     url = URLDecoder.decode(url, "UTF-8");
                 } catch (UnsupportedEncodingException ignore) {
                 }
-                // 后台停播会卸载到 about:blank，别把它当成一次「播放完成」——
-                // 否则会写坏续播历史，还会在回到前台前误触发一次换源
+                // 后台停播会卸载到 about:blank，别把它当成一次「播放完成」，
+                // 否则会在回到前台前误触发一次换源
                 if (null == url || url.startsWith("about:")) {
                     return;
                 }
@@ -665,7 +667,6 @@ public class LiveActivity extends BaseActivity {
                 }
                 if (newProgress >= 100) {
                     // 真实画面已经加载完成：撤掉「加载中」遮罩，露出播放画面
-                    HistoryDaoX.updateChannel(thisContext, url);
                     playingStarted = true;
                     handler.removeMessages(MSG_LOAD_WATCHDOG);
                     hideLoading();
@@ -712,18 +713,15 @@ public class LiveActivity extends BaseActivity {
     /**
      * 平板触屏：
      *   点左半屏 -> 拉起切台菜单（分类 + 频道）
-     *   点右半屏 -> 打开设置面板（画质 / 收藏 / 退出），相当于遥控器的「设置」操作区
+     *   点右半屏 -> 相当于按一次返回键（1.2 秒内连点两次即退出应用）
      */
     @Override
     public boolean dispatchTouchEvent(MotionEvent event) {
-        if (isExitDialogShowing) {
-            return super.dispatchTouchEvent(event);
-        }
         if (!isMenuShow && event.getAction() == MotionEvent.ACTION_DOWN) {
             if (event.getX() < screenWidth() / 2f) {
                 showMenu(false);
             } else {
-                showExitDialog();
+                handleBackKey(isExitHintShowing);
             }
             return true;
         }
@@ -745,17 +743,6 @@ public class LiveActivity extends BaseActivity {
         }
         int keyCode = event.getKeyCode();
 
-        if (isExitDialogShowing) {
-            if (keyCode == KeyEvent.KEYCODE_BACK) {
-                // 长按产生的重复事件不算「连按」
-                if (event.getRepeatCount() == 0) {
-                    handleBackKey(true);
-                }
-                return true;
-            }
-            return super.dispatchKeyEvent(event);
-        }
-
         if (isMenuShow) {
             return dispatchMenuKey(keyCode, event);
         }
@@ -767,17 +754,6 @@ public class LiveActivity extends BaseActivity {
         }
         if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) {
             showMenu(false);
-            return true;
-        }
-
-        if (isDigitKey(keyCode)) {
-            digitInputHandler.removeCallbacks(commitDigitRunnable);
-            digitBuffer.append(digitFromKeyCode(keyCode));
-            try {
-                ToastUtils.show(this, "输入: " + digitBuffer.toString(), Toast.LENGTH_SHORT);
-            } catch (Throwable ignore) {
-            }
-            digitInputHandler.postDelayed(commitDigitRunnable, DIGIT_TIMEOUT_MS);
             return true;
         }
 
@@ -798,7 +774,7 @@ public class LiveActivity extends BaseActivity {
         }
         if (keyCode == KeyEvent.KEYCODE_BACK) {
             if (event.getRepeatCount() == 0) {
-                handleBackKey(false);
+                handleBackKey(isExitHintShowing);
             }
             return true;
         }
@@ -807,21 +783,17 @@ public class LiveActivity extends BaseActivity {
 
     /**
      * 返回键：
-     *   面板没开着 -> 弹出设置面板，并记下时刻
-     *   面板开着   -> {@link #DOUBLE_BACK_MS} 内再按一次 = 直接退出应用，否则收起面板
+     *   提示没在显示 -> 弹出「再按一次返回键退出应用」提示，并记下时刻
+     *   提示正在显示且距上次在 {@link #DOUBLE_BACK_MS} 内 -> 直接退出应用
      */
-    private void handleBackKey(boolean panelShowing) {
+    private void handleBackKey(boolean hintShowing) {
         long now = SystemClock.elapsedRealtime();
-        if (panelShowing) {
-            if (now - lastBackAt <= DOUBLE_BACK_MS) {
-                exitApp();
-            } else {
-                hideExitDialog();
-            }
+        if (hintShowing && now - lastBackAt <= DOUBLE_BACK_MS) {
+            exitApp();
             return;
         }
         lastBackAt = now;
-        showExitDialog();
+        showExitHint();
     }
 
     private void exitApp() {
@@ -834,7 +806,8 @@ public class LiveActivity extends BaseActivity {
         // 用户真正按了键，之后的选择变化都要当真
         syncingMenu = false;
 
-        if (keyCode == KeyEvent.KEYCODE_BACK || keyCode == KeyEvent.KEYCODE_TAB) {
+        if (keyCode == KeyEvent.KEYCODE_BACK || keyCode == KeyEvent.KEYCODE_TAB
+                || keyCode == KeyEvent.KEYCODE_MENU || keyCode == KeyEvent.KEYCODE_SETTINGS) {
             hideMenu();
             return true;
         }
@@ -853,10 +826,6 @@ public class LiveActivity extends BaseActivity {
                 }
                 binding.channelList.requestFocus();
             }
-            return true;
-        }
-        if (keyCode == KeyEvent.KEYCODE_MENU || keyCode == KeyEvent.KEYCODE_SETTINGS) {
-            toggleFavoriteOnFocused();
             return true;
         }
         if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT && focusInside(binding.categoryList)) {
@@ -894,11 +863,13 @@ public class LiveActivity extends BaseActivity {
             ToastUtils.show(this, "频道数据加载中，请稍候", Toast.LENGTH_SHORT);
             return;
         }
+        hideExitHint();
         isMenuShow = true;
         binding.menuContainer.setVisibility(View.VISIBLE);
         syncMenu();
         View target = focusCategory ? binding.categoryList : binding.channelList;
         target.post(target::requestFocus);
+        applyMenuColumnHighlight();
     }
 
     /** 让菜单内容与当前分类 / 频道保持一致 */
@@ -962,69 +933,59 @@ public class LiveActivity extends BaseActivity {
         binding.webviewWrapper.requestFocus();
     }
 
-    /** 设置键：收藏 / 取消收藏选中的频道 */
-    private void toggleFavoriteOnFocused() {
-        Vod channel = focusedChannel();
-        if (null == channel) {
-            channel = currentLive;
+    /**
+     * 两栏的重点区分：只有当前有焦点的那一栏是亮的，另一栏压暗。
+     *
+     * <p>光靠 ListView 自己的选中高亮不够 —— 两栏都会保留各自的选中项，
+     * 按左右键时从画面上看不出焦点到底在哪一栏。
+     */
+    private void applyMenuColumnHighlight() {
+        boolean leftActive = menuColumn == 0;
+        setColumnActive(binding.categoryHeader, binding.categoryList, leftActive);
+        setColumnActive(binding.channelHeader, binding.channelList, !leftActive);
+    }
+
+    private void setColumnActive(View header, View list, boolean active) {
+        float alpha = active ? 1f : MENU_DIM_ALPHA;
+        if (null != header) {
+            header.setAlpha(alpha);
         }
-        if (null == channel) {
+        if (null != list) {
+            list.setAlpha(alpha);
+        }
+    }
+
+    // ------------------------------------------------------------------ 退出提示
+
+    /** 「再按一次返回键退出应用」提示：水平居中、垂直靠下（不贴底），2.4 秒后自动消失 */
+    private void showExitHint() {
+        if (null == binding.exitHint) {
             return;
         }
-        toggleFavorite(channel);
-        channelAdapter.notifyDataSetChanged();
+        isExitHintShowing = true;
+        handler.removeMessages(MSG_HIDE_EXIT_HINT);
+        binding.exitHint.animate().cancel();
+        binding.exitHint.setVisibility(View.VISIBLE);
+        binding.exitHint.setAlpha(0f);
+        binding.exitHint.animate().alpha(1f).setDuration(150L).start();
+        handler.sendMessageDelayed(handler.obtainMessage(MSG_HIDE_EXIT_HINT), EXIT_HINT_MS);
     }
 
-    private Vod focusedChannel() {
-        if (!focusInside(binding.channelList)) {
-            return null;
-        }
-        int position = binding.channelList.getSelectedItemPosition();
-        List<Vod> vods = currentChannelList();
-        if (position < 0 || position >= vods.size()) {
-            return null;
-        }
-        return vods.get(position);
-    }
-
-    private void toggleFavorite(Vod channel) {
-        if (null == channel || null == favoriteService) {
+    private void hideExitHint() {
+        if (null == binding.exitHint) {
             return;
         }
-        String url = UpdateService.cleanUrl(channel.getUrl());
-        if (null == url || url.isEmpty()) {
-            return;
-        }
-        String name = displayNameOf(channel);
-        if (favoriteService.isFavorite(url)) {
-            favoriteService.removeFavorite(url);
-            ToastUtils.show(this, "已取消收藏：" + name, Toast.LENGTH_SHORT);
-        } else {
-            Vod target = new Vod();
-            target.setName(name);
-            target.setUrl(url);
-            favoriteService.addFavorite(target);
-            ToastUtils.show(this, "已收藏：" + name, Toast.LENGTH_SHORT);
-        }
-        initData();
-    }
-
-    /** 去掉收藏条目上「1.」这样的序号前缀 */
-    private String displayNameOf(Vod channel) {
-        String name = channel.getName();
-        if (null == name) {
-            return "";
-        }
-        return name.replaceFirst("^[0-9]+\\.[ \u3000]*", "");
-    }
-
-    private void updateFavoriteButtonInDialog() {
-        if (null != currentLive && null != favoriteService
-                && favoriteService.isFavorite(currentLive.getUrl())) {
-            exitDialogBinding.btnFavorite.setText("取消收藏当前频道");
-        } else {
-            exitDialogBinding.btnFavorite.setText("收藏当前频道");
-        }
+        isExitHintShowing = false;
+        handler.removeMessages(MSG_HIDE_EXIT_HINT);
+        binding.exitHint.animate().cancel();
+        binding.exitHint.animate().alpha(0f).setDuration(180L).withEndAction(new Runnable() {
+            @Override
+            public void run() {
+                if (!isExitHintShowing && null != binding.exitHint) {
+                    binding.exitHint.setVisibility(View.GONE);
+                }
+            }
+        }).start();
     }
 
     // ------------------------------------------------------------------ 列表适配器
@@ -1102,7 +1063,6 @@ public class LiveActivity extends BaseActivity {
             TextView marker = convertView.findViewById(R.id.chMarker);
             TextView name = convertView.findViewById(R.id.chName);
             TextView sourceCount = convertView.findViewById(R.id.chSources);
-            TextView heart = convertView.findViewById(R.id.chHeart);
 
             boolean playing = sameChannel(channel, currentLive);
             marker.setVisibility(playing ? View.VISIBLE : View.INVISIBLE);
@@ -1116,13 +1076,17 @@ public class LiveActivity extends BaseActivity {
             } else {
                 sourceCount.setVisibility(View.GONE);
             }
-
-            boolean favorite = null != favoriteService
-                    && favoriteService.isFavorite(UpdateService.cleanUrl(channel.getUrl()));
-            heart.setText(favorite ? "♥" : "♡");
-            heart.setTextColor(favorite ? 0xFFFF6B81 : 0x668C94A3);
             return convertView;
         }
+    }
+
+    /** 频道名（去掉可能存在的「1.」之类序号前缀） */
+    private String displayNameOf(Vod channel) {
+        String name = channel.getName();
+        if (null == name) {
+            return "";
+        }
+        return name.replaceFirst("^[0-9]+\\.[ \u3000]*", "");
     }
 
     private void setupListListeners() {
@@ -1151,6 +1115,13 @@ public class LiveActivity extends BaseActivity {
             refreshChannelList();
             binding.channelList.requestFocus();
         });
+        binding.categoryList.setOnFocusChangeListener((v, hasFocus) -> {
+            if (hasFocus) {
+                menuColumn = 0;
+                applyMenuColumnHighlight();
+            }
+        });
+
         binding.channelList.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
@@ -1168,195 +1139,12 @@ public class LiveActivity extends BaseActivity {
             playChannel(position);
             hideMenu();
         });
-    }
-
-    // ------------------------------------------------------------------ 退出对话框
-
-    private void showExitDialog() {
-        if (null == exitDialogBinding) {
-            initExitDialog();
-        }
-        if (null == exitDialogBinding) {
-            return;
-        }
-        isExitDialogShowing = true;
-        updateDialogHeader();
-        exitDialogBinding.exitDialogContainer.setVisibility(View.VISIBLE);
-        setupHzListInExit();
-        updateFavoriteButtonInDialog();
-        exitDialogBinding.btnClose.post(() -> exitDialogBinding.btnClose.requestFocus());
-    }
-
-    /** 面板顶部：当前频道 + 分类 + 正在用的源 */
-    private void updateDialogHeader() {
-        if (null == exitDialogBinding || null == currentLive) {
-            return;
-        }
-        exitDialogBinding.exitChannel.setText(displayNameOf(currentLive));
-
-        String group = "";
-        if (currentCategoryIndex >= 0 && currentCategoryIndex < categories.size()) {
-            group = categories.get(currentCategoryIndex).getName();
-        }
-        List<Vod> sources = currentLive.getSources();
-        if (null == sources || sources.isEmpty()) {
-            exitDialogBinding.exitSource.setText(group);
-            return;
-        }
-        String label = sources.get(Math.min(currentSourceIndex, sources.size() - 1)).getName();
-        StringBuilder sb = new StringBuilder();
-        if (null != group && group.length() > 0) {
-            sb.append(group).append(" · ");
-        }
-        sb.append(label);
-        if (sources.size() > 1) {
-            sb.append(" · 共 ").append(sources.size()).append(" 个源");
-        }
-        exitDialogBinding.exitSource.setText(sb.toString());
-    }
-
-    private void hideExitDialog() {
-        if (null != exitDialogBinding) {
-            isExitDialogShowing = false;
-            exitDialogBinding.exitDialogContainer.setVisibility(View.GONE);
-        }
-        mWebView.requestFocus();
-    }
-
-    private void initExitDialog() {
-        View dialogView = findViewById(R.id.exitDialog);
-        exitDialogBinding = DataBindingUtil.bind(dialogView);
-        if (null == exitDialogBinding) {
-            return;
-        }
-        exitDialogBinding.exitDialogContainer.setFocusable(true);
-        exitDialogBinding.exitDialogContainer.setFocusableInTouchMode(true);
-
-        exitDialogBinding.btnFavorite.setOnClickListener(v -> {
-            toggleFavorite(currentLive);
-            updateFavoriteButtonInDialog();
-            exitDialogBinding.btnFavorite.post(() -> exitDialogBinding.btnFavorite.requestFocus());
+        binding.channelList.setOnFocusChangeListener((v, hasFocus) -> {
+            if (hasFocus) {
+                menuColumn = 1;
+                applyMenuColumnHighlight();
+            }
         });
-        exitDialogBinding.btnClose.setOnClickListener(v -> hideExitDialog());
-        exitDialogBinding.btnExitApp.setOnClickListener(v -> exitApp());
-        // 点卡片外的遮罩即关闭（卡片自身 clickable，点它不会穿到这里）
-        exitDialogBinding.exitDialogContainer.setOnClickListener(v -> hideExitDialog());
-    }
-
-    // ------------------------------------------------------------------ 数字键
-
-    private final StringBuilder digitBuffer = new StringBuilder();
-    private final Handler digitInputHandler = new Handler(Looper.getMainLooper());
-    private static final int DIGIT_TIMEOUT_MS = 1000;
-    private final Runnable commitDigitRunnable = new Runnable() {
-        @Override
-        public void run() {
-            String s = digitBuffer.toString();
-            digitBuffer.setLength(0);
-            if (s.isEmpty()) {
-                return;
-            }
-            try {
-                jumpToFavoriteByNumber(Integer.parseInt(s));
-            } catch (NumberFormatException ignore) {
-            }
-        }
-    };
-
-    private boolean isDigitKey(int keyCode) {
-        return keyCode >= KeyEvent.KEYCODE_0 && keyCode <= KeyEvent.KEYCODE_9;
-    }
-
-    private char digitFromKeyCode(int keyCode) {
-        return (char) ('0' + (keyCode - KeyEvent.KEYCODE_0));
-    }
-
-    /** 数字键跳到「收藏」分组的第 N 个频道并播放 */
-    private void jumpToFavoriteByNumber(int num) {
-        for (int i = 0; i < categories.size(); i++) {
-            if (!"favorite".equals(categories.get(i).getTag())) {
-                continue;
-            }
-            List<Vod> vods = categories.get(i).getVods();
-            int idx = num - 1;
-            if (null == vods || idx < 0 || idx >= vods.size()) {
-                return;
-            }
-            currentCategoryIndex = i;
-            currentChannelIndex = idx;
-            playChannel(idx);
-            return;
-        }
-    }
-
-    // ------------------------------------------------------------------ 画质（页面提供时）
-
-    protected static String videoQualityData = null;
-
-    private void setupHzListInExit() {
-        List<HzItem> hzItems = new ArrayList<>();
-        if (null != videoQualityData) {
-            try {
-                List<HzItem> parsed = JsonUtil.fromJson(videoQualityData, JsonTypes.HZ_LIST);
-                if (null != parsed) {
-                    hzItems = parsed;
-                }
-            } catch (Exception ignore) {
-            }
-        }
-        // 网页侧没给画质时把整块（小标题 + 列表）都收起来，别在卡片里留一块空白
-        boolean hasHz = !hzItems.isEmpty();
-        exitDialogBinding.hzLabel.setVisibility(hasHz ? View.VISIBLE : View.GONE);
-        exitDialogBinding.hzListInExit.setVisibility(hasHz ? View.VISIBLE : View.GONE);
-        firstHzButtonId = View.NO_ID;
-        // 没有画质行时，「收藏」的上焦点回落到「关闭」；有画质行时会在下面改接到第一颗画质按钮
-        exitDialogBinding.btnFavorite.setNextFocusUpId(exitDialogBinding.btnClose.getId());
-
-        BaseBindingAdapter hzAdapter = new BaseBindingAdapter<HzItem, ItemHzLiveBinding>(hzItems, R.layout.item_hz_live) {
-            @Override
-            public void doBindViewHolder(BaseViewHolder<ItemHzLiveBinding> holder, HzItem item) {
-                holder.getBinding().setVariable(BR.item, item);
-                holder.getBinding().setVariable(BR.itemPresenter, ItemPresenter);
-            }
-        };
-        hzAdapter.setItemPresenter(new HzLiveBindPresenter());
-        exitDialogBinding.hzListInExit.setLayoutManager(
-                new androidx.recyclerview.widget.LinearLayoutManager(this,
-                        androidx.recyclerview.widget.LinearLayoutManager.HORIZONTAL, false));
-        exitDialogBinding.hzListInExit.setAdapter(hzAdapter);
-        exitDialogBinding.hzListInExit.addOnChildAttachStateChangeListener(
-                new androidx.recyclerview.widget.RecyclerView.OnChildAttachStateChangeListener() {
-                    @Override
-                    public void onChildViewAttachedToWindow(View view) {
-                        View btn = view.findViewById(R.id.hzItem);
-                        if (null != btn) {
-                            if (btn.getId() == View.NO_ID) {
-                                btn.setId(View.generateViewId());
-                            }
-                            btn.setNextFocusUpId(exitDialogBinding.btnClose.getId());
-                            btn.setNextFocusDownId(exitDialogBinding.btnFavorite.getId());
-                            if (firstHzButtonId == View.NO_ID) {
-                                firstHzButtonId = btn.getId();
-                                exitDialogBinding.btnFavorite.setNextFocusUpId(firstHzButtonId);
-                            }
-                        }
-                    }
-
-                    @Override
-                    public void onChildViewDetachedFromWindow(View view) {
-                    }
-                });
-    }
-
-    public class HzLiveBindPresenter implements com.xu42.tv.live.impl.IBaseBindingPresenter {
-        public void onClick(HzItem item) {
-            if (item.getAction() != null && item.getAction().trim().length() > 0) {
-                Util.evalOnUi(mWebView, item.getAction());
-            } else if (item.getId() != null) {
-                String js = "$$(\"#" + item.getId() + "\").click()";
-                Util.evalOnUi(mWebView, js);
-            }
-        }
     }
 
     // ------------------------------------------------------------------ 布局与 JS 桥
@@ -1374,12 +1162,20 @@ public class LiveActivity extends BaseActivity {
         setupListListeners();
         // 平板：点菜单右边那块留白即收起菜单
         binding.menuBlank.setOnClickListener(v -> hideMenu());
+        // 退出提示：靠下但不贴底、不参与焦点；偏移按屏幕高度的比例算，
+        // 平板（600dp 高）和电视（1080dp 高）上观感一致
+        if (binding.exitHint.getLayoutParams() instanceof FrameLayout.LayoutParams) {
+            FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) binding.exitHint.getLayoutParams();
+            lp.bottomMargin = Math.round(getResources().getDisplayMetrics().heightPixels * 0.16f);
+            binding.exitHint.setLayoutParams(lp);
+        }
+        binding.exitHint.setClickable(false);
+        binding.exitHint.setFocusable(false);
     }
 
     @Override
     protected void onDestroy() {
         handler.removeCallbacksAndMessages(null);
-        digitInputHandler.removeCallbacksAndMessages(null);
         for (ObjectAnimator animator : dotAnimators) {
             animator.cancel();
         }
@@ -1524,10 +1320,6 @@ public class LiveActivity extends BaseActivity {
             }
             if ("keyNum".equals(service)) {
                 keyEventAll(Integer.parseInt(data));
-                return;
-            }
-            if ("videoQuality".equals(service)) {
-                videoQualityData = data;
             }
         }
 

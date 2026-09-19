@@ -13,7 +13,6 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import com.xu42.tv.live.MyApplication;
-import com.xu42.tv.live.dao.Favorite;
 import com.xu42.tv.live.domain.live.DataWrapper;
 import com.xu42.tv.live.domain.live.Live;
 import com.xu42.tv.live.domain.live.Vod;
@@ -354,50 +353,7 @@ public class UpdateService {
 
     // ------------------------------------------------------------------ 对外
 
-    /**
-     * 获取所有直播数据，包括收藏数据
-     *
-     * @param context 上下文
-     * @return 包含收藏栏目的直播数据列表
-     */
-    public static List<Live> getByLivesWithFavorites(Context context) {
-        List<Favorite> favorites = FavoriteService.getInstance(context).getAllFavorites();
-        if (favorites.isEmpty()) {
-            return newLives;
-        }
-        Live favoriteLive = new Live();
-        favoriteLive.setName("收藏");
-        favoriteLive.setTag("favorite");
-        favoriteLive.setIndex(0);
-
-        List<Vod> favoriteVods = new ArrayList<>();
-        int index = 0;
-        for (Favorite favorite : favorites) {
-            Vod channel = getByUrl(favorite.getVodUrl());
-            if (null == channel) {
-                // 该台已经从数据里下掉了，跳过以免留下点不开的空条目
-                continue;
-            }
-            Vod display = new Vod();
-            display.setName(String.format("%d.%s", index + 1, channel.getName()));
-            // 记住收藏时正在看的那个源，同时带上该台的全部源
-            display.setUrl(favorite.getVodUrl());
-            display.setSources(new ArrayList<>(channel.getSources()));
-            display.setTagIndex(0);
-            display.setDetailIndex(index);
-            display.setKey("fav_" + index);
-            display.setFavorite(true);
-            favoriteVods.add(display);
-            index++;
-        }
-        favoriteLive.setVods(favoriteVods);
-
-        List<Live> lives = new ArrayList<>();
-        lives.add(favoriteLive);
-        lives.addAll(newLives);
-        return lives;
-    }
-
+    /** 全部直播分类（央视 / 卫视 / 各省…），顺序即菜单里的顺序 */
     public static List<Live> getByLives() {
         return newLives;
     }

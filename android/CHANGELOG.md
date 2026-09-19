@@ -1,5 +1,58 @@
 # 更新日志
 
+## 未发布（2026-09-19）- 交互极简：菜单焦点区分 / 去掉收藏与历史 / 退出改提示
+
+三条体验问题一次处理完，方向都是「更简单、看得更明白」：
+
+### ✅ 切台菜单两栏焦点区分
+- 原来左右键在「分类栏 / 频道栏」之间移动时，两栏长得一模一样，从画面上看不出焦点在哪一栏
+- 新增 `menuColumn`（0 = 左栏分类 / 1 = 右栏频道）+ `applyMenuColumnHighlight()`：
+  **焦点所在的栏正常亮度，另一栏压暗到 `MENU_DIM_ALPHA`(0.4f)**，拖动期间零重排
+- 表头一起压暗：`activity_live.xml` 左栏表头加 `@+id/categoryHeader`、右栏表头加 `@+id/channelHeader`，
+  与各自的 ListView 成组切换，视觉上是一整栏在变亮/变暗
+- `showMenu()`、左右键切栏处都会调用，菜单每次打开时状态一定正确
+- ⚠️ 实现选了「改 alpha」而不是「改背景/重排」：后者在 ListView 上会触发 `requestLayout`，
+  TV 端容易出现切换瞬闪
+
+### ✅ 取消收藏功能 + 取消「记住上次频道」，并整体移除 Room / SQLite
+- **启动不再读历史**：`createInit()` 直接 `UpdateService.getDefaultChannel()`，永远是 CCTV-1
+- **整体删掉数据库这一层**（收藏与历史都没了，SQLite 已无任何使用者）：
+  - 删除 `dao/` 整个包：`AppDatabase`、`Favorite`、`FavoriteDao`、`History`、`HistoryDao`、`HistoryDaoX`
+  - 删除 `service/FavoriteService`
+  - 删除 `app/schemas/`（Room 导出的 schema）
+  - `build.gradle` 去掉 `androidx.room:room-runtime` + `room-compiler`，以及 `room.schemaLocation`
+    / `room.incremental` / `room.expandProjection` 三个 `annotationProcessor` 参数
+  - `proguard-rules.pro` 去掉 `-keep class com.xu42.tv.live.dao.**` 与 `-dontwarn androidx.room.paging.**`
+- 顺带清掉数据模型里的收藏字段：`domain/live/Vod.java` 的 `isFavorite`、`util/JsonTypes` 的 `HZ_LIST`
+- ⚠️ `js/tv/cctv/tv.json` 仍在读，频道数据链路不受影响；原生 `JsInterface` 本来只暴露
+  `toast` / `message` / `postJson` / `getJson` / `getHtml` 五个方法，**没有**收藏 / 历史的桥接入口，
+  网页侧（`web/tv-web`）也确认没有任何 `favorite` / `history` 调用，属于干净的「只删不用改」
+
+### ✅ 移除设置面板，退出改为「提示 + 二次返回」
+- 按下返回键后弹出的设置面板（画质 / 收藏 / 退出）**整体删除**：画质切换实际无人可验证、
+  收藏与退出都已另有去处，面板只剩下干扰
+  - 删除 `layout/dialog_exit.xml`、`layout/item_hz_live.xml`
+  - 删除 `drawable/dialog_card_bg.xml`、`drawable/dialog_button_bg.xml`、`color/dialog_button_text.xml`
+  - 删除 `values/styles.xml`(`DialogActionButton`)（该文件已空，整体移除）
+  - 删除只为画质列表服务的 `impl/BaseBindingAdapter`、`impl/BaseViewHolder`、`impl/IBaseBindingPresenter`、`domain/HzItem`
+  - `LiveActivity` 里随之清掉 `exitDialogBinding`、`isExitDialogShowing`、`videoQualityData`、
+    `setupHzListInExit()`、`HzLiveBindPresenter`、`updateFavoriteButtonInDialog()`、`initExitDialog/showExitDialog/hideExitDialog`
+- 改为**胶囊提示 + 二次返回**：
+  - 新增 `res/layout/activity_live.xml` 里的 `@+id/exitHint`：水平居中、垂直靠下但**不贴底**，
+    文案「再按一次「返回」键退出应用」，背景走新增的 `res/drawable/toast_bg.xml`（近黑圆角 + 1dp 描边）
+  - `showExitHint()` 淡入 150ms；`hideExitHint()` 淡出 180ms；
+    2.4 秒（`EXIT_HINT_MS`）无操作由 `MSG_HIDE_EXIT_HINT` 自动收起
+  - `handleBackKey()`：提示正在显示且距上次 ≤ `DOUBLE_BACK_MS`(1200ms) → `exitApp()`，否则记时刻并弹提示
+  - 提示 `clickable=false` / `focusable=false`，不抢焦点
+  - 长按返回键的重复事件继续用 `getRepeatCount() == 0` 过滤
+  - **平板点右半屏 = 按一次返回键**（`dispatchTouchEvent` 走同一个 `handleBackKey`），行为统一
+  - 提示底部间距在 `bind()` 里按 `heightPixels * 0.16f` **动态计算**，
+    平板（约 600dp 高）与电视（1080p）观感一致，不写死 dp
+- ⚠️ 打开切台菜单会先 `hideExitHint()`，避免两块 UI 叠在一起
+
+### 体积
+- ✅ Release 通用包 782 KB → **660 KB**（Room + recyclerview 依赖 + 设置面板资源全部移除）
+
 ## 未发布（2026-09-19）- 汲取原作者 APK 的三个体验修复
 
 参考 `docs/竞品分析-油桃TV与土拨鼠大屏浏览器.md`，落地其 P0 三项（已在米 Pad 4 Plus 真机验证）：

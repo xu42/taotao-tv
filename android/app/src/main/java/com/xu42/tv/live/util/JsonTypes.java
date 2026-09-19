@@ -1,7 +1,6 @@
 package com.xu42.tv.live.util;
 
 import com.google.gson.reflect.TypeToken;
-import com.xu42.tv.live.domain.HzItem;
 import com.xu42.tv.live.domain.live.DataWrapper;
 import com.xu42.tv.live.domain.live.Live;
 
@@ -38,10 +37,6 @@ public final class JsonTypes {
             DataWrapper.class,
             TypeToken.getParameterized(List.class, Live.class).getType()
     ).getType();
-
-    /** 画质列表：{@code List<HzItem>} */
-    public static final Type HZ_LIST =
-            TypeToken.getParameterized(List.class, HzItem.class).getType();
 
     /** 请求头：{@code Map<String, String>} */
     public static final Type STRING_MAP =

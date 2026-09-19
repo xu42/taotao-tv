@@ -39,14 +39,4 @@
         android:textColor="#9AA3B2"
         android:textSize="13sp"
         android:visibility="gone" />
-
-    <TextView
-        android:id="@+id/chHeart"
-        android:layout_width="34dp"
-        android:layout_height="wrap_content"
-        android:layout_marginLeft="8dp"
-        android:gravity="right"
-        android:text="♡"
-        android:textColor="#668C94A3"
-        android:textSize="18sp" />
 </LinearLayout>
