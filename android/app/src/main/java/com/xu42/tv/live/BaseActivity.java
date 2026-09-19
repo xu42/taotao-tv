@@ -5,6 +5,7 @@ import android.app.Instrumentation;
 import android.content.Context;
 import android.content.pm.ActivityInfo;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -31,7 +32,13 @@ public abstract class BaseActivity extends Activity {
     private static final String USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
+    /** 沉浸式粘性全屏：IMMERSIVE_STICKY | HIDE_NAVIGATION | FULLSCREEN
+     *  | LAYOUT_STABLE | LAYOUT_HIDE_NAVIGATION | LAYOUT_FULLSCREEN */
+    private static final int IMMERSIVE_FLAGS = 5894;
+
     private boolean isWebViewDestroyed = false;
+    /** 进入后台（onStop）的时刻，0 表示当前在前台 */
+    private long backgroundAt = 0L;
     protected WebView mWebView;
     protected Context thisContext;
     protected ViewDataBinding binding;
@@ -41,6 +48,7 @@ public abstract class BaseActivity extends Activity {
         requestWindowFeature(Window.FEATURE_NO_TITLE);//隐藏标题栏
         super.onCreate(savedInstanceState);
         getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        applyImmersiveMode();
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);
         // 禁用虚拟环境下的无障碍
         getWindow().getDecorView().setImportantForAccessibility(
@@ -67,6 +75,53 @@ public abstract class BaseActivity extends Activity {
     }
 
     protected abstract void createInit();
+
+    /**
+     * 沉浸式粘性全屏：隐藏状态栏 + 导航栏 / 手势条，用户划出后会自动再隐藏。
+     *
+     * <p>为什么必须反复调用：系统 UI 在「切走再切回」、「弹权限框」等场景会自己冒出来，
+     * 只在 onCreate 设一次是留不住满屏的，所以 onResume 与 onWindowFocusChanged 都要补一刀。
+     * 极少数定制 ROM 对 IMMERSIVE_STICKY 支持不佳，此时降级为只隐藏状态栏。
+     */
+    @SuppressWarnings("deprecation")
+    protected void applyImmersiveMode() {
+        Window window = getWindow();
+        if (null == window) {
+            return;
+        }
+        try {
+            window.getDecorView().setSystemUiVisibility(IMMERSIVE_FLAGS);
+        } catch (Throwable t) {
+            LogUtil.e(TAG, "applyImmersiveMode failed, fallback to FLAG_FULLSCREEN", t);
+            window.setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN,
+                    WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        }
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) {
+            applyImmersiveMode();
+        }
+    }
+
+    /**
+     * 进入后台（Activity 已经不可见）时回调。
+     *
+     * <p>子类在这里**真正**停掉播放：只靠 {@link WebView#onPause()} / {@code stopLoading()}
+     * 是停不住已经在跑的 HLS 的（分片请求与解码会继续偷跑流量）。
+     */
+    protected void onEnterBackground() {
+    }
+
+    /**
+     * 从后台回到前台时回调。
+     *
+     * @param backgroundMillis 后台停留时长（毫秒），子类可据此决定是否延迟恢复
+     */
+    protected void onLeaveBackground(long backgroundMillis) {
+    }
 
     protected abstract void initWebChromeClient();
 
@@ -218,16 +273,21 @@ public abstract class BaseActivity extends Activity {
                 LogUtil.e(TAG, "Error stopping WebView", e);
             }
         }
+        // 真正不可见了（正在退出时不折腾）：交给子类停播
+        if (!isFinishing()) {
+            backgroundAt = SystemClock.elapsedRealtime();
+            onEnterBackground();
+        }
     }
 
     @Override
     protected void onPause() {
         if (mWebView != null) {
             try {
-                // 暂停 WebView 以减少资源使用
+                // 暂停 WebView 以减少资源使用。
+                // 注意：这里不用 setJavaScriptEnabled(false) 来「停播」—— 对已经加载好的页面无效，
+                // 真正的停播在 onStop 里由 onEnterBackground() 完成。
                 mWebView.onPause();
-                // 暂停 JS 执行
-                mWebView.getSettings().setJavaScriptEnabled(false);
             } catch (Exception e) {
                 LogUtil.e(TAG, "Error pausing WebView", e);
             }
@@ -242,11 +302,16 @@ public abstract class BaseActivity extends Activity {
             try {
                 // 恢复 WebView
                 mWebView.onResume();
-                // 恢复 JS 执行
-                mWebView.getSettings().setJavaScriptEnabled(true);
             } catch (Exception e) {
                 LogUtil.e(TAG, "Error resuming WebView", e);
             }
+        }
+        // 切走再切回后系统 UI 会重新出现，这里补一刀
+        applyImmersiveMode();
+        if (backgroundAt > 0L) {
+            long backgroundMillis = SystemClock.elapsedRealtime() - backgroundAt;
+            backgroundAt = 0L;
+            onLeaveBackground(backgroundMillis);
         }
     }
 }

@@ -106,24 +106,27 @@
             android:orientation="horizontal"
             android:visibility="gone">
 
-            <!-- 左半边：菜单本体（clickable 只为了吃掉空白处的点击，别让它穿到下面的播放器） -->
+            <!--
+                左半边：菜单本体（clickable 只为了吃掉空白处的点击，别让它穿到下面的播放器）
+                底色不画在这一层：两栏各自半透明，直播画面能透出来，前后层次也更清楚
+            -->
             <LinearLayout
                 android:id="@+id/menuPanel"
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
                 android:layout_weight="1"
-                android:background="#F2070A10"
+                android:background="@android:color/transparent"
                 android:clickable="true"
                 android:focusable="false"
                 android:orientation="horizontal">
 
-                <!-- 左栏：分类 -->
+                <!-- 左栏：分类（80% 深底，作为导航骨架最实） -->
                 <LinearLayout
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="0.52"
                     android:orientation="vertical"
-                    android:background="#FF10151F"
+                    android:background="#CC070A10"
                     android:paddingTop="24dp"
                     android:paddingBottom="24dp">
 
@@ -150,12 +153,13 @@
                         android:descendantFocusability="afterDescendants" />
                 </LinearLayout>
 
-                <!-- 右栏：该分类下的频道 -->
+                <!-- 右栏：该分类下的频道（72% 更透，频道多、停留久，画面透出来更耐看） -->
                 <LinearLayout
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
                     android:orientation="vertical"
+                    android:background="#B8070A10"
                     android:paddingTop="24dp"
                     android:paddingBottom="16dp"
                     android:paddingLeft="20dp"
@@ -172,6 +176,10 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:textColor="#FFFFFF"
+                            android:shadowColor="#CC000000"
+                            android:shadowDx="0"
+                            android:shadowDy="1"
+                            android:shadowRadius="3"
                             android:textSize="22sp"
                             tools:text="央视" />
 
@@ -180,7 +188,11 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginLeft="12dp"
-                            android:textColor="#7F8798"
+                            android:textColor="#9AA3B2"
+                            android:shadowColor="#CC000000"
+                            android:shadowDx="0"
+                            android:shadowDy="1"
+                            android:shadowRadius="3"
                             android:textSize="14sp"
                             tools:text="19 个频道" />
 
@@ -193,6 +205,10 @@
                             android:ellipsize="end"
                             android:singleLine="true"
                             android:textColor="#FF8A3D"
+                            android:shadowColor="#CC000000"
+                            android:shadowDx="0"
+                            android:shadowDy="1"
+                            android:shadowRadius="3"
                             android:textSize="15sp"
                             tools:text="央视网 · 2 个源" />
                     </LinearLayout>
@@ -216,8 +232,12 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="8dp"
                         android:lineSpacingExtra="2dp"
+                        android:shadowColor="#CC000000"
+                        android:shadowDx="0"
+                        android:shadowDy="1"
+                        android:shadowRadius="3"
                         android:text="▲▼ 选择   ◀▶ 切栏   OK 播放\n设置键 收藏   播放中 ◀▶ 换源"
-                        android:textColor="#6B7385"
+                        android:textColor="#8A93A6"
                         android:textSize="12sp" />
                 </LinearLayout>
             </LinearLayout>

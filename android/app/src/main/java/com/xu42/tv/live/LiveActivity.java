@@ -136,6 +136,108 @@ public class LiveActivity extends BaseActivity {
     /** 本次正在加载的地址，用来识别上一次加载迟到的错误回调 */
     private String pendingUrl = null;
 
+    // ---------------------------------------------------------------- 后台停播
+    /** 进后台后先静音、再卸载页面之间的间隔（留一点时间让静音脚本生效） */
+    private static final long SUSPEND_UNLOAD_DELAY_MS = 250L;
+    /** 后台超过它才算「真离开」，回来时延迟一点再重载，等窗口稳定 */
+    private static final long BG_SUSPEND_MIN_MS = 2000L;
+    /** 长时间后台回到前台时的重载延迟，避免黑闪 */
+    private static final long RESUME_RELOAD_DELAY_MS = 600L;
+
+    /** 收到 onStop、等 250ms 就卸载页面（这期间回前台可以取消，省掉一次重载） */
+    private boolean pendingBackgroundUnload = false;
+    /** 页面已经被卸载到空白页，等回前台重载 */
+    private boolean unloadedForBackground = false;
+
+    /** 后台静音脚本：页面内的 video 全部静音并暂停（跨域 iframe 里的尽力而为） */
+    private static final String JS_MUTE_ALL_VIDEO =
+            "(function(){try{"
+                    + "var vs=document.getElementsByTagName('video');"
+                    + "for(var i=0;i<vs.length;i++){try{vs[i].muted=true;vs[i].pause();}catch(e){}}"
+                    + "var fs=document.getElementsByTagName('iframe');"
+                    + "for(var j=0;j<fs.length;j++){try{var d=fs[j].contentDocument;if(!d){continue;}"
+                    + "var v2=d.getElementsByTagName('video');"
+                    + "for(var k=0;k<v2.length;k++){try{v2[k].muted=true;v2[k].pause();}catch(e){}}"
+                    + "}catch(e){}}"
+                    + "return 'ok';}catch(e){return 'err';}})()";
+
+    /**
+     * 进后台：先静音页面里的 video，稍后卸载到空白页。
+     *
+     * <p>为什么必须卸载页面：WebView.onPause() 只是暂停调度，已经在播的 HLS 分片请求、
+     * 解码与音频不会停 —— App 退到后台仍在偷跑流量和硬件解码器。
+     */
+    @Override
+    protected void onEnterBackground() {
+        if (null == mWebView || null == currentLive) {
+            return;
+        }
+        pendingBackgroundUnload = true;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+            try {
+                Util.eval(mWebView, JS_MUTE_ALL_VIDEO);
+            } catch (Throwable ignore) {
+            }
+        }
+        handler.removeCallbacks(unloadForBackgroundRunnable);
+        handler.postDelayed(unloadForBackgroundRunnable, SUSPEND_UNLOAD_DELAY_MS);
+    }
+
+    @Override
+    protected void onLeaveBackground(long backgroundMillis) {
+        handler.removeCallbacks(unloadForBackgroundRunnable);
+        pendingBackgroundUnload = false;
+        if (!unloadedForBackground) {
+            // 离开时间太短，页面还没卸载：什么都不用做，画面原样还在
+            return;
+        }
+        unloadedForBackground = false;
+        handler.removeCallbacks(restoreAfterBackgroundRunnable);
+        long delay = backgroundMillis >= BG_SUSPEND_MIN_MS ? RESUME_RELOAD_DELAY_MS : 0L;
+        LogUtil.i(TAG, "回前台，后台停留 " + backgroundMillis + "ms，延迟 " + delay + "ms 重载");
+        handler.postDelayed(restoreAfterBackgroundRunnable, delay);
+    }
+
+    /** 卸载到空白页：一定要先作废当前这一代，否则 watchdog / 视频探测会把「主动卸载」当成播放失败并换源 */
+    private final Runnable unloadForBackgroundRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (!pendingBackgroundUnload) {
+                return;
+            }
+            pendingBackgroundUnload = false;
+            if (null == mWebView || isFinishing()) {
+                return;
+            }
+            unloadedForBackground = true;
+            loadGeneration++;
+            failedGeneration = -1;
+            playingStarted = false;
+            pendingUrl = null;
+            handler.removeMessages(MSG_LOAD_WATCHDOG);
+            handler.removeMessages(MSG_VIDEO_PROBE);
+            doHideLoading();
+            LogUtil.i(TAG, "进后台，卸载到空白页停播");
+            try {
+                mWebView.stopLoading();
+                mWebView.loadUrl("about:blank");
+            } catch (Throwable ignore) {
+            }
+        }
+    };
+
+    /** 回前台重载当前频道：走完整的 startLoad，遮罩 / 看门狗 / 自动换源都能正常工作 */
+    private final Runnable restoreAfterBackgroundRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (null == mWebView || null == currentLive || isFinishing()) {
+                return;
+            }
+            LogUtil.i(TAG, "后台恢复：重载 " + loadingLabel(currentLive, currentSourceIndex));
+            startLoad(currentSourceIndex, false);
+        }
+    };
+
     @Override
     protected void createInit() {
         bind();
@@ -374,6 +476,12 @@ public class LiveActivity extends BaseActivity {
 
     /** 某一路源播不出来：自动切到下一路，全试完就提示放弃 */
     private void onSourceFailed(String failedUrl, String reason) {
+        // 后台停播期间的错误（多半是卸载到 about:blank 引起的）一律忽略：
+        // 这时既不该提示，更不该在后台偷偷换源
+        if (unloadedForBackground || pendingBackgroundUnload) {
+            doHideLoading();
+            return;
+        }
         if (null == currentLive) {
             doHideLoading();
             return;
@@ -542,6 +650,11 @@ public class LiveActivity extends BaseActivity {
                 try {
                     url = URLDecoder.decode(url, "UTF-8");
                 } catch (UnsupportedEncodingException ignore) {
+                }
+                // 后台停播会卸载到 about:blank，别把它当成一次「播放完成」——
+                // 否则会写坏续播历史，还会在回到前台前误触发一次换源
+                if (null == url || url.startsWith("about:")) {
+                    return;
                 }
                 LogUtil.i(TAG, "onProgressChanged " + newProgress + " " + url);
                 Vod vod = UpdateService.getByUrl(url);

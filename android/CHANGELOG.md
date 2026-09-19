@@ -1,5 +1,26 @@
 # 更新日志
 
+## 未发布（2026-09-19）- 汲取原作者 APK 的三个体验修复
+
+参考 `docs/竞品分析-油桃TV与土拨鼠大屏浏览器.md`，落地其 P0 三项（已在米 Pad 4 Plus 真机验证）：
+
+- ✅ **沉浸式粘性全屏**：`BaseActivity.applyImmersiveMode()`（`setSystemUiVisibility(5894)`），
+  在 `onCreate` / `onResume` / `onWindowFocusChanged(true)` 三处调用，
+  状态栏与手势导航条在平板/盒子上彻底隐藏；异常时降级为 `FLAG_FULLSCREEN`
+- ✅ **进后台真正停播**：`WebView.onPause()` / `stopLoading()` 停不住已经在跑的 HLS，
+  现在改为「静音页内 video → 250ms 后卸载到 `about:blank` → 回前台按后台时长（≥2s 延迟 600ms）重载」。
+  卸载前作废 `loadGeneration`、清 watchdog 与视频探测，避免把主动卸载误判成播放失败
+  - 顺带修掉 `onPause()` 里 `setJavaScriptEnabled(false)` 的无效实现
+  - 两处必要守卫：`onProgressChanged` 忽略 `about:*`（否则 `about:blank` 会写坏续播历史）、
+    `onSourceFailed` 在后台停播期间直接返回（否则会在后台偷偷换源）
+- ✅ **切台菜单分层半透明**：`menuPanel` 改透明基底，左栏分类 `#CC070A10`（80%）、
+  右栏频道 `#B8070A10`（72%），直播画面透出来且层次分明；
+  菜单文字补 `shadowColor=#CC000000` 文字阴影，纯白画面下依然清晰
+
+### 新增
+- ✅ `BaseActivity` 新增可覆盖钩子 `onEnterBackground()` / `onLeaveBackground(long)`
+- ✅ `docs/img/menu-half-translucent.png`、`docs/img/exit-panel-centered.png`（真机截图）
+
 ## 未发布（2026-09-19）- 平板 / 电视交互优化
 
 ### 平板

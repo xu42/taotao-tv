@@ -24,6 +24,10 @@
         android:singleLine="true"
         android:ellipsize="end"
         android:textColor="#C7CEDB"
+        android:shadowColor="#CC000000"
+        android:shadowDx="0"
+        android:shadowDy="1"
+        android:shadowRadius="3"
         android:textSize="19sp" />
 
     <TextView
@@ -31,6 +35,6 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginLeft="10dp"
-        android:textColor="#6B7385"
+        android:textColor="#8A93A6"
         android:textSize="14sp" />
 </LinearLayout>
